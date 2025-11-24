@@ -12,7 +12,7 @@ st.set_page_config(page_title="Bot 数据看板", layout="wide")
 st.title("🤖 机器人数据预警看板 (实时自动更新)")
 st.markdown(f"数据源：[点击查看 Google Sheets](https://docs.google.com/spreadsheets/d/{SPREADSHEET_KEY})")
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=1800)
 def load_data():
     try:
         # 关键修改：只从 Streamlit Secrets 读取密钥
@@ -99,4 +99,5 @@ if target_bot:
     st.plotly_chart(fig, use_container_width=True)
     
     with st.expander("查看源数据"):
+
         st.dataframe(chart_data.sort_values('Date', ascending=False))
