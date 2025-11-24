@@ -68,14 +68,28 @@ if 'product_filters' not in st.session_state:
     
     st.session_state.product_filters = {
         'date_option': '本月',
-        'notename': all_notenames,
-        'start_date': TODAY.replace(day=1), # 默认本月
+        'notename': [], # <--- 修正: 默认全不选 (空列表)
+        'start_date': TODAY.replace(day=1), 
         'end_date': TODAY,
     }
     st.session_state.query_submitted = False
     
 # --- 3. 页面配置与标题 ---
 st.set_page_config(page_title="TG BOT数据看板", layout="wide")
+
+# Request 1: 注入 CSS 更改 Multiselect 标签颜色为浅蓝色
+st.markdown("""
+<style>
+/* Target the selected tags within a multiselect for light blue background */
+.stMultiSelect div[data-testid="stMultiSelect"] > div > div:nth-child(2) div[data-baseweb="tag"] {
+    background-color: #ADD8E6 !important; /* Light Blue */
+    color: #000000 !important;
+    border: 1px solid #ADD8E6 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 st.title("🚀 TG BOT数据看板 (30Min更新)")
 st.markdown(f"**数据更新至：{str(TODAY)}**")
 
@@ -207,7 +221,7 @@ st.markdown("---")
 
 
 # ====================================================================
-# --- 7. 产品趋势分析筛选 (Request 1: 仅保留日期和机器人备注名) ---
+# --- 7. 趋势分析筛选 ---
 # ====================================================================
 
 st.header("📊 趋势分析筛选")
@@ -233,7 +247,7 @@ with st.form("product_trend_form"):
         )
 
     with col2:
-        # Request 1: 只保留机器人备注名
+        # Request 2: 默认值使用 session_state 中的值，该值初始化为 []
         col_notename = st.multiselect("机器人备注名", all_notenames, default=st.session_state.product_filters['notename'], key='form_notename')
     
     # --- 日期范围输入 (自定义) ---
@@ -268,7 +282,6 @@ with st.form("product_trend_form"):
 # --- 8. 执行筛选 (Product Trend) ---
 if submitted or not st.session_state.query_submitted:
     
-    # 获取机器人备注名的多选结果
     current_notenames = col_notename
     
     # 核心数据过滤逻辑
@@ -296,13 +309,16 @@ df_product_filtered = st.session_state.df_product_filtered
 current_product_filters = st.session_state.product_filters
 
 
-# --- 9. 产品趋势分析 (Request 4: 支持多选聚合) ---
+# --- 9. 产品趋势分析 (支持多选聚合) ---
 
 st.markdown("---")
 st.subheader(f"📊 聚合趋势分析 (时间: {current_product_filters['start_date'].strftime('%m.%d')} - {current_product_filters['end_date'].strftime('%m.%d')})")
 
-if not df_product_filtered.empty:
-    
+if not current_product_filters['notename']:
+    st.warning("请在上方【机器人备注名】中选择至少一个机器人进行趋势分析。")
+elif df_product_filtered.empty:
+    st.info("当前筛选条件下没有找到任何数据。请调整筛选条件。")
+else:
     # 核心修改：对所有通过筛选的行进行日期分组聚合 (支持多选聚合)
     df_trend_data = df_product_filtered.groupby('Date')[['Consultations', 'Leads']].sum().reset_index()
     
@@ -339,8 +355,6 @@ if not df_product_filtered.empty:
     ) 
     
     st.plotly_chart(fig9, use_container_width=True)
-else:
-    st.info("当前筛选条件下没有找到任何数据。请调整筛选条件。")
 
 
 # --- 10. 查看源数据 ---
