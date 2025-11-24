@@ -7,7 +7,6 @@ import gspread
 
 # --- 配置 ---
 # 请确保您的 SPREADSHEET_KEY 是正确的
-# 修正 Key 为您提供的正确 Key
 SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U' 
 
 # 缓存时间 30分钟
@@ -28,7 +27,6 @@ def load_data():
         df = pd.DataFrame(data)
         return df
     except Exception as e:
-        # 如果 Key 修正后仍报错 404，可能是工作表名称问题，但此处不改动
         st.error(f"❌ 数据加载失败，请检查 Google Sheets 权限或 Key。详细错误: {e}")
         st.stop()
         return pd.DataFrame()
@@ -66,17 +64,11 @@ TODAY = MAX_DATE
 
 # 初始化 Session State (用于存储 Product Trend 筛选条件)
 if 'product_filters' not in st.session_state:
-    all_groups = df['Group'].dropna().unique().tolist()
-    all_usernames = df['BotUsername'].dropna().unique().tolist()
     all_notenames = df['BotNoteName'].dropna().unique().tolist()
-    all_products = df['Product'].dropna().unique().tolist()
     
     st.session_state.product_filters = {
         'date_option': '本月',
-        'group': all_groups,
-        'username': all_usernames,
         'notename': all_notenames,
-        'product': all_products,
         'start_date': TODAY.replace(day=1), # 默认本月
         'end_date': TODAY,
     }
@@ -185,7 +177,6 @@ st.header("📈 当月总趋势")
 df_month = df[df['Date'].dt.date >= CURRENT_MONTH_START].groupby('Date')[['Consultations', 'Leads']].sum().reset_index()
 
 if not df_month.empty:
-    # Request 2: 日期格式修正
     df_month['日期'] = df_month['Date'].dt.strftime('%m.%d')
     df_month = df_month.rename(columns={'Consultations': '咨询', 'Leads': '线索'})
     
@@ -202,11 +193,10 @@ if not df_month.empty:
                 name=trace.name + ' 标签', showlegend=False, marker=dict(size=0)
             ))
             
-    # Request 1: 强制显示所有日期标签，避免重叠
     fig7.update_xaxes(
         tickangle=45,
-        type='category', # 确保每个类别（日期）都显示
-        dtick=1 # 强制显示所有点
+        type='category', 
+        dtick=1 
     ) 
     
     st.plotly_chart(fig7, use_container_width=True)
@@ -217,26 +207,23 @@ st.markdown("---")
 
 
 # ====================================================================
-# --- 7. 产品趋势分析筛选 (Request 6: 筛选区域移到主页) ---
+# --- 7. 产品趋势分析筛选 (Request 1: 仅保留日期和机器人备注名) ---
 # ====================================================================
 
-st.header("📊 产品趋势分析筛选")
+st.header("📊 趋势分析筛选")
 
 @st.cache_data
 def get_unique_list(df, col):
     return sorted(df[col].dropna().unique().tolist())
 
-all_groups = get_unique_list(df, 'Group')
-all_usernames = get_unique_list(df, 'BotUsername')
 all_notenames = get_unique_list(df, 'BotNoteName')
-all_products = get_unique_list(df, 'Product')
 
-# 使用 form 确保点击按钮后才更新 (Request 3, 5)
+
+# 使用 form 确保点击按钮后才更新
 with st.form("product_trend_form"):
     
-    # --- 筛选条件布局 (Request 2: 恢复为标准下拉框样式) ---
-    col1, col2, col3 = st.columns(3)
-    col4, col5 = st.columns(2)
+    # --- 筛选条件布局 ---
+    col1, col2 = st.columns(2)
     
     with col1:
         date_option = st.selectbox(
@@ -246,15 +233,8 @@ with st.form("product_trend_form"):
         )
 
     with col2:
-        col_group = st.multiselect("所属小组", all_groups, default=st.session_state.product_filters['group'], key='form_group')
-    with col3:
-        col_product = st.multiselect("绑定的产品", all_products, default=st.session_state.product_filters['product'], key='form_product')
-    
-    with col4:
-        col_username = st.multiselect("机器人用户名", all_usernames, default=st.session_state.product_filters['username'], key='form_username')
-    with col5:
+        # Request 1: 只保留机器人备注名
         col_notename = st.multiselect("机器人备注名", all_notenames, default=st.session_state.product_filters['notename'], key='form_notename')
-
     
     # --- 日期范围输入 (自定义) ---
     start_date = MIN_DATE
@@ -288,14 +268,14 @@ with st.form("product_trend_form"):
 # --- 8. 执行筛选 (Product Trend) ---
 if submitted or not st.session_state.query_submitted:
     
+    # 获取机器人备注名的多选结果
+    current_notenames = col_notename
+    
     # 核心数据过滤逻辑
     df_product_filtered_temp = df[
         (df['Date'].dt.date >= start_date) & 
         (df['Date'].dt.date <= end_date) &
-        (df['Group'].isin(col_group)) &
-        (df['BotUsername'].isin(col_username)) &
-        (df['BotNoteName'].isin(col_notename)) &
-        (df['Product'].isin(col_product))
+        (df['BotNoteName'].isin(current_notenames)) # 仅根据备注名过滤
     ].copy()
     
     # 存储筛选结果和当前过滤器状态
@@ -303,10 +283,7 @@ if submitted or not st.session_state.query_submitted:
     st.session_state.query_submitted = True
     st.session_state.product_filters = {
         'date_option': date_option,
-        'group': col_group,
-        'username': col_username,
-        'notename': col_notename,
-        'product': col_product,
+        'notename': current_notenames,
         'start_date': start_date,
         'end_date': end_date,
     }
@@ -315,3 +292,62 @@ if submitted or not st.session_state.query_submitted:
         st.rerun()
 
 # 使用 Session State 中的数据
+df_product_filtered = st.session_state.df_product_filtered
+current_product_filters = st.session_state.product_filters
+
+
+# --- 9. 产品趋势分析 (Request 4: 支持多选聚合) ---
+
+st.markdown("---")
+st.subheader(f"📊 聚合趋势分析 (时间: {current_product_filters['start_date'].strftime('%m.%d')} - {current_product_filters['end_date'].strftime('%m.%d')})")
+
+if not df_product_filtered.empty:
+    
+    # 核心修改：对所有通过筛选的行进行日期分组聚合 (支持多选聚合)
+    df_trend_data = df_product_filtered.groupby('Date')[['Consultations', 'Leads']].sum().reset_index()
+    
+    df_trend_data['日期'] = df_trend_data['Date'].dt.strftime('%m.%d')
+    df_trend_data = df_trend_data.rename(columns={'Consultations': '咨询', 'Leads': '线索'})
+
+    # 汇总显示当前筛选的范围
+    current_notename_list = current_product_filters['notename']
+    title_suffix = ""
+    if len(current_notename_list) == len(all_notenames):
+        title_suffix = " (所有机器人聚合)"
+    elif len(current_notename_list) == 1:
+        title_suffix = f" (机器人: {current_notename_list[0]})"
+    else:
+        title_suffix = f" (聚合 {len(current_notename_list)} 个机器人)"
+
+    fig9 = px.line(df_trend_data, x='日期', y=['咨询', '线索'], 
+                   labels={'value': '数量', 'variable': '指标'},
+                   title="趋势分析" + title_suffix)
+    
+    for trace in fig9.data:
+        if trace.name in ['咨询', '线索']:
+            fig9.add_trace(go.Scatter(
+                x=trace.x, y=trace.y, mode='text', 
+                text=[f'{int(val)}' for val in trace.y], 
+                textposition='top center', 
+                name=trace.name + ' 标签', showlegend=False, marker=dict(size=0)
+            ))
+    
+    fig9.update_xaxes(
+        tickangle=45,
+        type='category', 
+        dtick=1 
+    ) 
+    
+    st.plotly_chart(fig9, use_container_width=True)
+else:
+    st.info("当前筛选条件下没有找到任何数据。请调整筛选条件。")
+
+
+# --- 10. 查看源数据 ---
+st.markdown("---")
+date_filter_display = f"{current_product_filters['start_date'].strftime('%Y-%m-%d')} 至 {current_product_filters['end_date'].strftime('%Y-%m-%d')}"
+notename_display = f"机器人: {len(current_product_filters['notename'])} 个"
+
+
+with st.expander(f"查看源数据 (筛选区间: {current_product_filters['date_option']} / {notename_display})", expanded=False):
+    st.dataframe(df_product_filtered.sort_values('Date', ascending=True), use_container_width=True)
