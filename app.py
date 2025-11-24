@@ -7,6 +7,7 @@ import gspread
 
 # --- 配置 ---
 # 请确保您的 SPREADSHEET_KEY 是正确的
+# 修正 Key 为您提供的正确 Key
 SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U' 
 
 # 缓存时间 30分钟
@@ -27,14 +28,15 @@ def load_data():
         df = pd.DataFrame(data)
         return df
     except Exception as e:
-        st.error(f"❌ 数据加载失败，请检查 Google Sheets 权限。详细错误: {e}")
+        # 如果 Key 修正后仍报错 404，可能是工作表名称问题，但此处不改动
+        st.error(f"❌ 数据加载失败，请检查 Google Sheets 权限或 Key。详细错误: {e}")
         st.stop()
         return pd.DataFrame()
 
 # 核心数据加载
 df = load_data()
 
-# --- 2. 数据清洗和预处理 (全局数据，用于 Request 5) ---
+# --- 2. 数据清洗和预处理 (全局数据) ---
 if df.empty:
     st.title("🚀 TG BOT数据看板 (30Min更新)")
     st.warning("数据表为空或加载失败。")
@@ -79,13 +81,13 @@ if 'product_filters' not in st.session_state:
         'end_date': TODAY,
     }
     st.session_state.query_submitted = False
-
+    
 # --- 3. 页面配置与标题 ---
 st.set_page_config(page_title="TG BOT数据看板", layout="wide")
 st.title("🚀 TG BOT数据看板 (30Min更新)")
 st.markdown(f"**数据更新至：{str(TODAY)}**")
 
-# --- 4. 核心数据指标 (Request 5 - 不受筛选控制) ---
+# --- 4. 核心数据指标 (不受筛选控制) ---
 st.header("📊 核心数据指标")
 
 def get_comparison_metrics(df, today, period_days):
@@ -147,7 +149,7 @@ col4.metric(
 st.markdown("---")
 
 
-# --- 5. 今日机器人数据柱状图 (Request 5 - 不受筛选控制) ---
+# --- 5. 今日机器人数据柱状图 (不受筛选控制) ---
 st.header("🤖 今日机器人表现") 
 
 df_today = df[(df['Date'].dt.date == TODAY)]
@@ -169,7 +171,6 @@ if not df_today_filtered.empty:
         yaxis_title='数量',
         legend_title='指标'
     )
-    # Request 1: 确保标签不被隐藏 (增加Y轴顶部留白)
     fig6.update_yaxes(range=[0, max_val * 1.1]) 
     
     st.plotly_chart(fig6, use_container_width=True)
@@ -178,7 +179,7 @@ else:
 
 st.markdown("---")
 
-# --- 6. 当月总趋势折线图 (Request 5 - 不受筛选控制) ---
+# --- 6. 当月总趋势折线图 (不受筛选控制) ---
 st.header("📈 当月总趋势") 
 
 df_month = df[df['Date'].dt.date >= CURRENT_MONTH_START].groupby('Date')[['Consultations', 'Leads']].sum().reset_index()
@@ -200,8 +201,13 @@ if not df_month.empty:
                 textposition='top center', 
                 name=trace.name + ' 标签', showlegend=False, marker=dict(size=0)
             ))
+            
     # Request 1: 强制显示所有日期标签，避免重叠
-    fig7.update_xaxes(tickangle=45) 
+    fig7.update_xaxes(
+        tickangle=45,
+        type='category', # 确保每个类别（日期）都显示
+        dtick=1 # 强制显示所有点
+    ) 
     
     st.plotly_chart(fig7, use_container_width=True)
 else:
@@ -211,7 +217,7 @@ st.markdown("---")
 
 
 # ====================================================================
-# --- 7. 产品趋势分析筛选 (Request 6: 筛选区域) ---
+# --- 7. 产品趋势分析筛选 (Request 6: 筛选区域移到主页) ---
 # ====================================================================
 
 st.header("📊 产品趋势分析筛选")
@@ -225,28 +231,30 @@ all_usernames = get_unique_list(df, 'BotUsername')
 all_notenames = get_unique_list(df, 'BotNoteName')
 all_products = get_unique_list(df, 'Product')
 
-# 使用 columns 布局筛选条件，更紧凑
-cols = st.columns(5) 
-
+# 使用 form 确保点击按钮后才更新 (Request 3, 5)
 with st.form("product_trend_form"):
     
-    # --- 日期筛选 (Request 4 default: 本月) ---
-    with cols[0]:
+    # --- 筛选条件布局 (Request 2: 恢复为标准下拉框样式) ---
+    col1, col2, col3 = st.columns(3)
+    col4, col5 = st.columns(2)
+    
+    with col1:
         date_option = st.selectbox(
             "时间范围:",
             ("本月", "本周", "近7天", "近30天", "自定义日期"),
             key='form_date_option'
         )
 
-    # --- 组合筛选 (多选 Request 4) ---
-    with cols[1]:
-        col_group = st.multiselect("所属小组", all_groups, default=all_groups, key='form_group')
-    with cols[2]:
-        col_username = st.multiselect("机器人用户名", all_usernames, default=all_usernames, key='form_username')
-    with cols[3]:
-        col_notename = st.multiselect("机器人备注名", all_notenames, default=all_notenames, key='form_notename')
-    with cols[4]:
-        col_product = st.multiselect("绑定的产品", all_products, default=all_products, key='form_product')
+    with col2:
+        col_group = st.multiselect("所属小组", all_groups, default=st.session_state.product_filters['group'], key='form_group')
+    with col3:
+        col_product = st.multiselect("绑定的产品", all_products, default=st.session_state.product_filters['product'], key='form_product')
+    
+    with col4:
+        col_username = st.multiselect("机器人用户名", all_usernames, default=st.session_state.product_filters['username'], key='form_username')
+    with col5:
+        col_notename = st.multiselect("机器人备注名", all_notenames, default=st.session_state.product_filters['notename'], key='form_notename')
+
     
     # --- 日期范围输入 (自定义) ---
     start_date = MIN_DATE
@@ -254,27 +262,30 @@ with st.form("product_trend_form"):
 
     if date_option == "本月":
         start_date = TODAY.replace(day=1)
+        end_date = TODAY
     elif date_option == "本周":
         start_date = TODAY - datetime.timedelta(days=TODAY.weekday())
+        end_date = TODAY
     elif date_option == "近7天":
         start_date = TODAY - datetime.timedelta(days=6)
+        end_date = TODAY
     elif date_option == "近30天":
         start_date = TODAY - datetime.timedelta(days=29)
+        end_date = TODAY
     elif date_option == "自定义日期":
+        st.markdown("---")
         st.caption("自定义日期区间:")
         date_range_cols = st.columns(2)
         with date_range_cols[0]:
-            start_date = st.date_input("起始日期", MIN_DATE, key='form_start_date', max_value=MAX_DATE, label_visibility="collapsed")
+            start_date = st.date_input("起始日期", st.session_state.product_filters['start_date'], key='form_start_date', max_value=MAX_DATE, label_visibility="collapsed")
         with date_range_cols[1]:
-            end_date = st.date_input("结束日期", TODAY, key='form_end_date', max_value=MAX_DATE, label_visibility="collapsed")
+            end_date = st.date_input("结束日期", st.session_state.product_filters['end_date'], key='form_end_date', max_value=MAX_DATE, label_visibility="collapsed")
+            
+
+    submitted = st.form_submit_button("🔍 查询趋势 / 更新数据源")
 
 
-    submitted = st.form_submit_button("🔍 查询趋势")
-
-
-# --- 8. 执行筛选 (Request 4) ---
-
-# 初始化 / 提交逻辑
+# --- 8. 执行筛选 (Product Trend) ---
 if submitted or not st.session_state.query_submitted:
     
     # 核心数据过滤逻辑
@@ -304,59 +315,3 @@ if submitted or not st.session_state.query_submitted:
         st.rerun()
 
 # 使用 Session State 中的数据
-df_product_filtered = st.session_state.df_product_filtered
-current_product_filters = st.session_state.product_filters
-
-
-# --- 9. 产品趋势分析 (Request 3) ---
-current_product_list = current_product_filters['product']
-
-st.markdown("---")
-st.subheader(f"📊 趋势分析 (时间: {current_product_filters['start_date'].strftime('%m.%d')} - {current_product_filters['end_date'].strftime('%m.%d')})")
-
-if len(current_product_list) == 1:
-    current_product = current_product_list[0]
-    
-    df_product_month = df_product_filtered.groupby('Date')[['Consultations', 'Leads']].sum().reset_index()
-    
-    if not df_product_month.empty:
-        # Request 3: 日期格式修正
-        df_product_month['日期'] = df_product_month['Date'].dt.strftime('%m.%d')
-        df_product_month = df_product_month.rename(columns={'Consultations': '咨询', 'Leads': '线索'})
-
-        fig9 = px.line(df_product_month, x='日期', y=['咨询', '线索'], 
-                       labels={'value': '数量', 'variable': '指标'},
-                       title=f"产品: {current_product} 趋势")
-        
-        for trace in fig9.data:
-            if trace.name in ['咨询', '线索']:
-                fig9.add_trace(go.Scatter(
-                    x=trace.x, y=trace.y, mode='text', 
-                    text=[f'{int(val)}' for val in trace.y], 
-                    textposition='top center', 
-                    name=trace.name + ' 标签', showlegend=False, marker=dict(size=0)
-                ))
-        
-        # Request 3: 强制显示所有日期标签，避免重叠
-        fig9.update_xaxes(tickangle=45) 
-        
-        st.plotly_chart(fig9, use_container_width=True)
-    else:
-        st.info(f"当前筛选条件下，产品 {current_product} 暂无数据。")
-
-elif len(current_product_list) > 1:
-    st.warning(f"已选择 **{len(current_product_list)}** 个产品。趋势分析图只支持查看 **单个产品** 的趋势。请在上方【绑定的产品】中，选择且仅选择一个产品。")
-
-else:
-    st.info("请在上方【绑定的产品】中至少选择一个产品。")
-
-# --- 10. 查看源数据 (Request 4) ---
-st.markdown("---")
-date_filter_display = f"{current_product_filters['start_date'].strftime('%Y-%m-%d')} 至 {current_product_filters['end_date'].strftime('%Y-%m-%d')}"
-group_display = f"小组: {', '.join(current_product_filters['group'])}"
-product_display = f"产品: {', '.join(current_product_filters['product'])}"
-
-
-with st.expander(f"查看源数据 (筛选条件: {current_product_filters['date_option']} / {group_display} / {product_display})", expanded=False):
-    st.dataframe(df_product_filtered.sort_values('Date', ascending=True), use_container_width=True)
-
