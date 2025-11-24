@@ -7,7 +7,7 @@ import gspread
 
 # --- 配置 ---
 # 请确保您的 SPREADSHEET_KEY 是正确的
-SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YYkB1U' 
+SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U' 
 
 # 缓存时间 30分钟
 @st.cache_data(ttl=1800) 
@@ -359,3 +359,4 @@ product_display = f"产品: {', '.join(current_product_filters['product'])}"
 
 with st.expander(f"查看源数据 (筛选条件: {current_product_filters['date_option']} / {group_display} / {product_display})", expanded=False):
     st.dataframe(df_product_filtered.sort_values('Date', ascending=True), use_container_width=True)
+
