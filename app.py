@@ -6,7 +6,7 @@ import datetime
 import gspread 
 
 # --- 配置 ---
-SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U' 
+SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YYkB1U' 
 
 # 缓存时间 30分钟
 @st.cache_data(ttl=1800) 
@@ -57,10 +57,32 @@ df['Leads'] = pd.to_numeric(df['Leads'], errors='coerce').fillna(0)
 df = df.dropna(subset=['Date'])
 df = df.sort_values('Date', ascending=True)
 
-# 动态获取时间范围
+# ==============================================================================
+# 🔥 核心修复：在此处统一计算所有时间变量，防止 NameError
+# ==============================================================================
 MAX_DATE = df['Date'].max().date()
 MIN_DATE = df['Date'].min().date()
 TODAY = MAX_DATE 
+
+# 1. 本月第一天
+CURRENT_MONTH_START = TODAY.replace(day=1)
+
+# 2. 本周第一天 (周一)
+CURRENT_WEEK_START = TODAY - datetime.timedelta(days=TODAY.weekday())
+CURRENT_WEEK_DAYS = (TODAY - CURRENT_WEEK_START).days + 1
+
+# 3. 上月日期范围
+last_month_end = CURRENT_MONTH_START - datetime.timedelta(days=1)
+last_month_start = last_month_end.replace(day=1)
+
+# 4. 上周日期范围
+last_week_start = CURRENT_WEEK_START - datetime.timedelta(days=7)
+last_week_end = CURRENT_WEEK_START - datetime.timedelta(days=1)
+
+# 5. 昨日
+yesterday = TODAY - datetime.timedelta(days=1)
+# ==============================================================================
+
 
 # 初始化 Session State
 if 'product_filters' not in st.session_state:
@@ -69,7 +91,7 @@ if 'product_filters' not in st.session_state:
     st.session_state.product_filters = {
         'date_option': '本月',
         'notename': [], 
-        'start_date': TODAY.replace(day=1), 
+        'start_date': CURRENT_MONTH_START, # 使用定义好的变量
         'end_date': TODAY,
     }
     st.session_state.query_submitted = False
@@ -77,7 +99,6 @@ if 'product_filters' not in st.session_state:
 # --- 3. 页面配置与标题 ---
 st.set_page_config(page_title="TG BOT数据看板", layout="wide")
 
-# 注入 CSS 优化多选框样式
 st.markdown("""
 <style>
 .stMultiSelect div[data-testid="stMultiSelect"] > div > div:nth-child(2) div[data-baseweb="tag"] {
@@ -91,7 +112,7 @@ st.markdown("""
 st.title("🚀 TG BOT数据看板 (30Min更新)")
 st.markdown(f"**数据更新至：{str(TODAY)}**")
 
-# --- 4. 核心数据指标 (Request 1: 详细矩阵) ---
+# --- 4. 核心数据指标 (3行4列矩阵) ---
 st.header("📊 核心数据指标")
 
 def get_data_in_range(df, start, end):
@@ -100,40 +121,19 @@ def get_data_in_range(df, start, end):
     subset = df[mask]
     total_consult = int(subset['Consultations'].sum())
     total_lead = int(subset['Leads'].sum())
-    # 计算天数，至少为1天避免除以0
     days = (end - start).days + 1
     days = days if days > 0 else 1
     return total_consult, total_lead, days
 
-# --- 定义时间周期 ---
-# 1. 本月
-this_month_start = TODAY.replace(day=1)
-tm_c, tm_l, tm_days = get_data_in_range(df, this_month_start, TODAY)
-
-# 2. 上月
-last_month_end = this_month_start - datetime.timedelta(days=1)
-last_month_start = last_month_end.replace(day=1)
+# 计算指标
+tm_c, tm_l, tm_days = get_data_in_range(df, CURRENT_MONTH_START, TODAY)
 lm_c, lm_l, lm_days = get_data_in_range(df, last_month_start, last_month_end)
-
-# 3. 本周 (周一至今天)
-this_week_start = TODAY - datetime.timedelta(days=TODAY.weekday())
-tw_c, tw_l, _ = get_data_in_range(df, this_week_start, TODAY)
-
-# 4. 上周 (周一至周日)
-last_week_start = this_week_start - datetime.timedelta(days=7)
-last_week_end = this_week_start - datetime.timedelta(days=1)
+tw_c, tw_l, _ = get_data_in_range(df, CURRENT_WEEK_START, TODAY)
 lw_c, lw_l, _ = get_data_in_range(df, last_week_start, last_week_end)
-
-# 5. 今日
 t_c, t_l, _ = get_data_in_range(df, TODAY, TODAY)
-
-# 6. 昨日
-yesterday = TODAY - datetime.timedelta(days=1)
 y_c, y_l, _ = get_data_in_range(df, yesterday, yesterday)
 
-# --- 布局展示 (3行4列) ---
-
-# 第一行：月度数据 (带日均)
+# 布局展示
 st.markdown("##### 📅 月度概览")
 row1_1, row1_2, row1_3, row1_4 = st.columns(4)
 with row1_1:
@@ -145,7 +145,6 @@ with row1_3:
 with row1_4:
     st.metric("本月总线索数", f"{tm_l:,}", f"日均 {tm_l/tm_days:.1f}", delta_color="off")
 
-# 第二行：周度数据
 st.markdown("##### 🗓️ 周度概览")
 row2_1, row2_2, row2_3, row2_4 = st.columns(4)
 with row2_1:
@@ -157,7 +156,6 @@ with row2_3:
 with row2_4:
     st.metric("本周线索数 (一-今)", f"{tw_l:,}")
 
-# 第三行：日度数据
 st.markdown("##### ⏰ 日度概览")
 row3_1, row3_2, row3_3, row3_4 = st.columns(4)
 with row3_1:
@@ -205,6 +203,7 @@ st.markdown("---")
 # --- 6. 当月总趋势折线图 ---
 st.header("📈 当月总趋势") 
 
+# 确保使用全局变量 CURRENT_MONTH_START
 df_month = df[df['Date'].dt.date >= CURRENT_MONTH_START].groupby('Date')[['Consultations', 'Leads']].sum().reset_index()
 
 if not df_month.empty:
@@ -261,9 +260,9 @@ with st.form("product_trend_form"):
     end_date = TODAY
 
     if date_option == "本月":
-        start_date = TODAY.replace(day=1)
+        start_date = CURRENT_MONTH_START
     elif date_option == "本周":
-        start_date = TODAY - datetime.timedelta(days=TODAY.weekday())
+        start_date = CURRENT_WEEK_START
     elif date_option == "近7天":
         start_date = TODAY - datetime.timedelta(days=6)
     elif date_option == "近30天":
@@ -355,4 +354,3 @@ notename_display = f"机器人: {len(current_product_filters['notename'])} 个"
 
 with st.expander(f"查看源数据 (筛选区间: {current_product_filters['date_option']} / {notename_display})", expanded=False):
     st.dataframe(df_product_filtered.sort_values('Date', ascending=True), use_container_width=True)
-
