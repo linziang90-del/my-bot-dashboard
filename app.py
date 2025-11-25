@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import datetime
 import gspread 
+import numpy as np 
 
 # --- 配置 ---
 SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U' 
@@ -12,6 +13,7 @@ SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U'
 @st.cache_data(ttl=1800) 
 def load_data():
     """连接 Google Sheets 并加载数据 (高性能版)"""
+    # ... (数据加载代码保持不变)
     try:
         if "gcp_service_account" not in st.secrets:
             st.error("未配置 Secrets！请在 Streamlit Cloud 后台配置 gcp_service_account。")
@@ -155,6 +157,7 @@ st.markdown("##### 📅 月度概览")
 row1_1, row1_2, row1_3, row1_4 = st.columns(4)
 with row1_1: st.metric("上月总咨询数", f"{lm_c:,}", f"日均 {lm_avg_c:.1f}", delta_color="off")
 with row1_2: st.metric("上月总线索数", f"{lm_l:,}", f"日均 {lm_avg_l:.1f}", delta_color="off")
+# 这里的 delta 是字符串，但 Streamlit 默认会解析并显示红/绿/箭头
 with row1_3: st.metric("本月总咨询数", f"{tm_c:,}", f"日均 {tm_avg_c:.1f} (差值 {diff_c:+.1f})", delta_color="normal")
 with row1_4: st.metric("本月总线索数", f"{tm_l:,}", f"日均 {tm_avg_l:.1f} (差值 {diff_l:+.1f})", delta_color="normal")
 
@@ -169,6 +172,7 @@ st.markdown("##### ⏰ 日度概览")
 row3_1, row3_2, row3_3, row3_4 = st.columns(4)
 with row3_1: st.metric(f"昨日咨询数 ({y_str})", f"{y_c:,}")
 with row3_2: st.metric(f"昨日线索数 ({y_str})", f"{y_l:,}")
+# 这里的 delta 是字符串，包含百分比和 vs 昨日文本，Streamlit 默认会解析并显示红/绿/箭头
 with row3_3: st.metric(f"今日咨询数 ({t_str})", f"{t_c:,}", f"{pct_c:.1f}% vs 昨日", delta_color="normal")
 with row3_4: st.metric(f"今日线索数 ({t_str})", f"{t_l:,}", f"{pct_l:.1f}% vs 昨日", delta_color="normal")
 
@@ -358,12 +362,28 @@ for tab, group_name in zip(tabs, groups_to_render):
         
         col_m_c, col_m_l, col_w_c, col_w_l, col_d_c, col_d_l = st.columns(6)
 
+        # 辅助函数: 创建 Delta 文本
+        def create_delta_text(delta_val, is_avg=True):
+            if is_avg:
+                # 保持 V20.0 的格式，但使用 f-string 强制 + 号
+                return f"日均差值: {delta_val:+.1f}"
+            else:
+                # 保持 V20.0 的格式，但使用 f-string 强制 + 号
+                return f"差值: {delta_val:+d} vs 昨日"
+        
+        # 辅助函数: 创建一个简短的数值 Delta (用于驱动颜色和箭头)
+        def create_numeric_delta_driver(delta_val, decimals=1):
+            # 将数值四舍五入到指定小数位，确保 Streamlit 识别
+            return round(delta_val, decimals)
+
+
         # 月度咨询 (vs 上月日均)
         with col_m_c: 
             st.metric(
                 "本月总咨询", 
                 f"{metrics['tm_c']:,}", 
-                f"日均差值: {metrics['delta_month_c']:+.1f}",
+                # 传递 V20.0 的格式化 Delta 文本
+                delta=create_delta_text(metrics['delta_month_c'], is_avg=True),
                 delta_color="normal"
             )
         # 月度线索 (vs 上月日均)
@@ -371,7 +391,8 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "本月总线索", 
                 f"{metrics['tm_l']:,}", 
-                f"日均差值: {metrics['delta_month_l']:+.1f}",
+                # 传递 V20.0 的格式化 Delta 文本
+                delta=create_delta_text(metrics['delta_month_l'], is_avg=True),
                 delta_color="normal"
             )
             
@@ -380,7 +401,8 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "本周咨询", 
                 f"{metrics['tw_c']:,}", 
-                f"日均差值: {metrics['delta_week_c']:+.1f}",
+                # 传递 V20.0 的格式化 Delta 文本
+                delta=create_delta_text(metrics['delta_week_c'], is_avg=True),
                 delta_color="normal"
             )
         # 周线索 (vs 上周日均)
@@ -388,7 +410,8 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "本周线索", 
                 f"{metrics['tw_l']:,}", 
-                f"日均差值: {metrics['delta_week_l']:+.1f}",
+                # 传递 V20.0 的格式化 Delta 文本
+                delta=create_delta_text(metrics['delta_week_l'], is_avg=True),
                 delta_color="normal"
             )
             
@@ -397,7 +420,8 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "今日咨询", 
                 f"{metrics['t_c']:,}", 
-                f"差值: {metrics['delta_day_c']:+d} vs 昨日", # 今日 vs 昨日是总数对比，无需日均
+                # 传递 V20.0 的格式化 Delta 文本
+                delta=create_delta_text(metrics['delta_day_c'], is_avg=False), 
                 delta_color="normal"
             )
         # 今日线索 (vs 昨日总数)
@@ -405,7 +429,8 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "今日线索", 
                 f"{metrics['t_l']:,}", 
-                f"差值: {metrics['delta_day_l']:+d} vs 昨日",
+                # 传递 V20.0 的格式化 Delta 文本
+                delta=create_delta_text(metrics['delta_day_l'], is_avg=False),
                 delta_color="normal"
             )
 
@@ -425,11 +450,13 @@ for tab, group_name in zip(tabs, groups_to_render):
         with col_c_down:
             if not max_down_c.empty:
                 down_data = max_down_c.iloc[0]
-                delta_val = f"{down_data['Pct_Change_Consultations']:.1f}% ({down_data['Diff_Avg_Consultations']:.1f}次/日)"
+                pct_delta_val = down_data['Pct_Change_Consultations']
+                delta_text = f"{pct_delta_val:.1f}% ({down_data['Diff_Avg_Consultations']:.1f}次/日)"
                 st.metric(
                     label="🔻 日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
-                    delta=delta_val, 
+                    # 传递 V20.0 的格式化 Delta 文本 (包含 +/-)
+                    delta=delta_text, 
                     delta_color="normal" 
                 )
             else:
@@ -438,11 +465,14 @@ for tab, group_name in zip(tabs, groups_to_render):
         with col_c_up:
             if not max_up_c.empty:
                 up_data = max_up_c.iloc[0]
-                delta_val = f"+{up_data['Pct_Change_Consultations']:.1f}% (+{up_data['Diff_Avg_Consultations']:.1f}次/日)"
+                pct_delta_val = up_data['Pct_Change_Consultations']
+                # 确保正数前面有 + 号，让 Streamlit 识别为正向变化
+                delta_text = f"+{pct_delta_val:.1f}% (+{up_data['Diff_Avg_Consultations']:.1f}次/日)"
                 st.metric(
                     label="⬆️ 日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
-                    delta=delta_val, 
+                    # 传递 V20.0 的格式化 Delta 文本 (包含 +/-)
+                    delta=delta_text, 
                     delta_color="normal" 
                 )
             else:
@@ -461,11 +491,13 @@ for tab, group_name in zip(tabs, groups_to_render):
         with col_l_down:
             if not max_down_l.empty:
                 down_data = max_down_l.iloc[0]
-                delta_val = f"{down_data['Pct_Change_Leads']:.1f}% ({down_data['Diff_Avg_Leads']:.1f}次/日)"
+                pct_delta_val = down_data['Pct_Change_Leads']
+                delta_text = f"{pct_delta_val:.1f}% ({down_data['Diff_Avg_Leads']:.1f}次/日)"
                 st.metric(
                     label="🔻 日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
-                    delta=delta_val, 
+                    # 传递 V20.0 的格式化 Delta 文本 (包含 +/-)
+                    delta=delta_text, 
                     delta_color="normal" 
                 )
             else:
@@ -474,11 +506,14 @@ for tab, group_name in zip(tabs, groups_to_render):
         with col_l_up:
             if not max_up_l.empty:
                 up_data = max_up_l.iloc[0]
-                delta_val = f"+{up_data['Pct_Change_Leads']:.1f}% (+{up_data['Diff_Avg_Leads']:.1f}次/日)"
+                pct_delta_val = up_data['Pct_Change_Leads']
+                # 确保正数前面有 + 号，让 Streamlit 识别为正向变化
+                delta_text = f"+{pct_delta_val:.1f}% (+{up_data['Diff_Avg_Leads']:.1f}次/日)"
                 st.metric(
                     label="⬆️ 日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
-                    delta=delta_val, 
+                    # 传递 V20.0 的格式化 Delta 文本 (包含 +/-)
+                    delta=delta_text, 
                     delta_color="normal" 
                 )
             else:
