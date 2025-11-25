@@ -362,16 +362,17 @@ for tab, group_name in zip(tabs, groups_to_render):
         
         col_m_c, col_m_l, col_w_c, col_w_l, col_d_c, col_d_l = st.columns(6)
 
-        # 辅助函数: 创建 Delta 文本 (用于核心指标)
+        # 辅助函数: 创建核心指标 Delta **显示文本**
+        # ⚠️ 确保只返回数值的字符串，用于 Streamlit 正确解析颜色和箭头
         def create_core_metric_delta_text(delta_val, is_avg=True):
             if is_avg:
-                # 核心指标使用 V20.0 格式: "日均差值: [+/-]X.X"
-                return f"日均差值: {delta_val:+.1f}"
+                # 核心指标显示格式: "[+/-]X.X" (日均差值)
+                return f"{delta_val:+.1f} (日均差值)"
             else:
-                # 核心指标使用 V20.0 格式: "差值: [+/-]X vs 昨日"
-                return f"差值: {delta_val:+d} vs 昨日"
+                # 核心指标显示格式: "[+/-]X vs 昨日" (总量差值)
+                return f"{delta_val:+d} vs 昨日"
         
-        # 辅助函数: 创建 Bot 排名 Delta 文本 (使用 V20.0 格式)
+        # 辅助函数: 创建 Bot 排名 Delta 文本 (V20.0 格式，保留中文)
         def create_bot_ranking_delta_text(pct_change, avg_diff):
             # V20.0 格式: "[+/-]X.X% ([+/-]Y.Y次/日)"
             return f"{pct_change:+.1f}% ({avg_diff:+.1f}次/日)"
@@ -382,7 +383,7 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "本月总咨询", 
                 f"{metrics['tm_c']:,}", 
-                # 传入 V20.0 的格式化 Delta 文本
+                # 传入纯数值字符串，确保颜色/箭头逻辑正确
                 delta=create_core_metric_delta_text(metrics['delta_month_c'], is_avg=True),
                 delta_color="normal"
             )
@@ -449,7 +450,7 @@ for tab, group_name in zip(tabs, groups_to_render):
                 st.metric(
                     label="🔻 日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
-                    # 传入 V20.0 的格式化 Delta 文本
+                    # 传入 V20.0 的格式化 Delta 文本 (已恢复)
                     delta=delta_text, 
                     delta_color="normal" 
                 )
@@ -463,7 +464,7 @@ for tab, group_name in zip(tabs, groups_to_render):
                 st.metric(
                     label="⬆️ 日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
-                    # 传入 V20.0 的格式化 Delta 文本
+                    # 传入 V20.0 的格式化 Delta 文本 (已恢复)
                     delta=delta_text, 
                     delta_color="normal" 
                 )
@@ -487,7 +488,7 @@ for tab, group_name in zip(tabs, groups_to_render):
                 st.metric(
                     label="🔻 日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
-                    # 传入 V20.0 的格式化 Delta 文本
+                    # 传入 V20.0 的格式化 Delta 文本 (已恢复)
                     delta=delta_text, 
                     delta_color="normal" 
                 )
@@ -501,7 +502,7 @@ for tab, group_name in zip(tabs, groups_to_render):
                 st.metric(
                     label="⬆️ 日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
-                    # 传入 V20.0 的格式化 Delta 文本
+                    # 传入 V20.0 的格式化 Delta 文本 (已恢复)
                     delta=delta_text, 
                     delta_color="normal" 
                 )
