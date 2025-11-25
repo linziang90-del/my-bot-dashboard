@@ -6,8 +6,7 @@ import datetime
 import gspread 
 
 # --- 配置 ---
-# 请确保您的 SPREADSHEET_KEY 是正确的
-SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U' 
+SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YYkB1U' 
 
 # 缓存时间 30分钟
 @st.cache_data(ttl=1800) 
@@ -34,8 +33,9 @@ def load_data():
 # 核心数据加载
 df = load_data()
 
-# --- 2. 数据清洗和预处理 (全局数据) ---
+# --- 2. 数据清洗和预处理 ---
 if df.empty:
+    st.set_page_config(page_title="TG BOT数据看板", layout="wide")
     st.title("🚀 TG BOT数据看板 (30Min更新)")
     st.warning("数据表为空或加载失败。")
     st.stop()
@@ -62,13 +62,13 @@ MAX_DATE = df['Date'].max().date()
 MIN_DATE = df['Date'].min().date()
 TODAY = MAX_DATE 
 
-# 初始化 Session State (用于存储 Product Trend 筛选条件)
+# 初始化 Session State
 if 'product_filters' not in st.session_state:
     all_notenames = df['BotNoteName'].dropna().unique().tolist()
     
     st.session_state.product_filters = {
         'date_option': '本月',
-        'notename': [], # <--- 修正: 默认全不选 (空列表)
+        'notename': [], 
         'start_date': TODAY.replace(day=1), 
         'end_date': TODAY,
     }
@@ -77,85 +77,102 @@ if 'product_filters' not in st.session_state:
 # --- 3. 页面配置与标题 ---
 st.set_page_config(page_title="TG BOT数据看板", layout="wide")
 
-# Request 1: 注入 CSS 更改 Multiselect 标签颜色为浅蓝色
+# 注入 CSS 优化多选框样式
 st.markdown("""
 <style>
-/* Target the selected tags within a multiselect for light blue background */
 .stMultiSelect div[data-testid="stMultiSelect"] > div > div:nth-child(2) div[data-baseweb="tag"] {
-    background-color: #ADD8E6 !important; /* Light Blue */
+    background-color: #ADD8E6 !important;
     color: #000000 !important;
     border: 1px solid #ADD8E6 !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-
 st.title("🚀 TG BOT数据看板 (30Min更新)")
 st.markdown(f"**数据更新至：{str(TODAY)}**")
 
-# --- 4. 核心数据指标 (不受筛选控制) ---
+# --- 4. 核心数据指标 (Request 1: 详细矩阵) ---
 st.header("📊 核心数据指标")
 
-def get_comparison_metrics(df, today, period_days):
-    """计算本期数据和对比期数据的指标"""
-    current_start = today - datetime.timedelta(days=period_days - 1)
-    
-    if period_days == 1: 
-        prev_end = today - datetime.timedelta(days=1)
-        prev_start = prev_end
-    else: 
-        prev_end = current_start - datetime.timedelta(days=1)
-        prev_start = prev_end - datetime.timedelta(days=period_days - 1)
-        
-    df_curr = df[(df['Date'].dt.date >= current_start) & (df['Date'].dt.date <= today)]
-    df_prev = df[(df['Date'].dt.date >= prev_start) & (df['Date'].dt.date <= prev_end)]
-    
-    curr_leads = df_curr['Leads'].sum()
-    prev_leads = df_prev['Leads'].sum()
-    
-    if prev_leads == 0:
-        pct_change = 0.0 if curr_leads == 0 else 100.0
-    else:
-        pct_change = (curr_leads - prev_leads) / prev_leads * 100
-        
-    return curr_leads, prev_leads, pct_change
+def get_data_in_range(df, start, end):
+    """获取指定日期范围内的数据汇总"""
+    mask = (df['Date'].dt.date >= start) & (df['Date'].dt.date <= end)
+    subset = df[mask]
+    total_consult = int(subset['Consultations'].sum())
+    total_lead = int(subset['Leads'].sum())
+    # 计算天数，至少为1天避免除以0
+    days = (end - start).days + 1
+    days = days if days > 0 else 1
+    return total_consult, total_lead, days
 
-CURRENT_WEEK_START = TODAY - datetime.timedelta(days=TODAY.weekday())
-CURRENT_WEEK_DAYS = (TODAY - CURRENT_WEEK_START).days + 1
-week_leads, last_week_leads_raw, week_change = get_comparison_metrics(df, TODAY, CURRENT_WEEK_DAYS)
+# --- 定义时间周期 ---
+# 1. 本月
+this_month_start = TODAY.replace(day=1)
+tm_c, tm_l, tm_days = get_data_in_range(df, this_month_start, TODAY)
 
-CURRENT_MONTH_START = TODAY.replace(day=1)
-month_leads = df[(df['Date'].dt.date >= CURRENT_MONTH_START)]['Leads'].sum()
+# 2. 上月
+last_month_end = this_month_start - datetime.timedelta(days=1)
+last_month_start = last_month_end.replace(day=1)
+lm_c, lm_l, lm_days = get_data_in_range(df, last_month_start, last_month_end)
 
-LAST_WEEK_START = TODAY - datetime.timedelta(days=13)
-LAST_WEEK_END = TODAY - datetime.timedelta(days=7)
-last_week_leads = df[(df['Date'].dt.date >= LAST_WEEK_START) & (df['Date'].dt.date <= LAST_WEEK_END)]['Leads'].sum()
+# 3. 本周 (周一至今天)
+this_week_start = TODAY - datetime.timedelta(days=TODAY.weekday())
+tw_c, tw_l, _ = get_data_in_range(df, this_week_start, TODAY)
 
-today_leads, yesterday_leads, today_change = get_comparison_metrics(df, TODAY, 1)
+# 4. 上周 (周一至周日)
+last_week_start = this_week_start - datetime.timedelta(days=7)
+last_week_end = this_week_start - datetime.timedelta(days=1)
+lw_c, lw_l, _ = get_data_in_range(df, last_week_start, last_week_end)
 
-col1, col2, col3, col4 = st.columns(4)
+# 5. 今日
+t_c, t_l, _ = get_data_in_range(df, TODAY, TODAY)
 
-col1.metric("本月总线索数", f"{int(month_leads):,}")
-col2.metric("上个完整周线索数", f"{int(last_week_leads):,}")
+# 6. 昨日
+yesterday = TODAY - datetime.timedelta(days=1)
+y_c, y_l, _ = get_data_in_range(df, yesterday, yesterday)
 
-col3.metric(
-    f"本周线索数 ({CURRENT_WEEK_DAYS}天)", 
-    f"{int(week_leads):,}", 
-    f"{week_change:.1f}% vs 上周同期", 
-    delta_color="normal"
-)
+# --- 布局展示 (3行4列) ---
 
-col4.metric(
-    f"今日线索数 ({str(TODAY)})", 
-    f"{int(today_leads):,}", 
-    f"{today_change:.1f}% vs 昨日", 
-    delta_color="normal"
-)
+# 第一行：月度数据 (带日均)
+st.markdown("##### 📅 月度概览")
+row1_1, row1_2, row1_3, row1_4 = st.columns(4)
+with row1_1:
+    st.metric("上月总咨询数", f"{lm_c:,}", f"日均 {lm_c/lm_days:.1f}", delta_color="off")
+with row1_2:
+    st.metric("上月总线索数", f"{lm_l:,}", f"日均 {lm_l/lm_days:.1f}", delta_color="off")
+with row1_3:
+    st.metric("本月总咨询数", f"{tm_c:,}", f"日均 {tm_c/tm_days:.1f}", delta_color="off")
+with row1_4:
+    st.metric("本月总线索数", f"{tm_l:,}", f"日均 {tm_l/tm_days:.1f}", delta_color="off")
+
+# 第二行：周度数据
+st.markdown("##### 🗓️ 周度概览")
+row2_1, row2_2, row2_3, row2_4 = st.columns(4)
+with row2_1:
+    st.metric("上周咨询数 (一-日)", f"{lw_c:,}")
+with row2_2:
+    st.metric("上周线索数 (一-日)", f"{lw_l:,}")
+with row2_3:
+    st.metric("本周咨询数 (一-今)", f"{tw_c:,}")
+with row2_4:
+    st.metric("本周线索数 (一-今)", f"{tw_l:,}")
+
+# 第三行：日度数据
+st.markdown("##### ⏰ 日度概览")
+row3_1, row3_2, row3_3, row3_4 = st.columns(4)
+with row3_1:
+    st.metric("昨日咨询数", f"{y_c:,}")
+with row3_2:
+    st.metric("昨日线索数", f"{y_l:,}")
+with row3_3:
+    st.metric(f"今日咨询数 ({str(TODAY)[5:]})", f"{t_c:,}")
+with row3_4:
+    st.metric(f"今日线索数 ({str(TODAY)[5:]})", f"{t_l:,}")
 
 st.markdown("---")
 
 
-# --- 5. 今日机器人数据柱状图 (不受筛选控制) ---
+# --- 5. 今日机器人数据柱状图 ---
 st.header("🤖 今日机器人表现") 
 
 df_today = df[(df['Date'].dt.date == TODAY)]
@@ -185,7 +202,7 @@ else:
 
 st.markdown("---")
 
-# --- 6. 当月总趋势折线图 (不受筛选控制) ---
+# --- 6. 当月总趋势折线图 ---
 st.header("📈 当月总趋势") 
 
 df_month = df[df['Date'].dt.date >= CURRENT_MONTH_START].groupby('Date')[['Consultations', 'Leads']].sum().reset_index()
@@ -207,11 +224,7 @@ if not df_month.empty:
                 name=trace.name + ' 标签', showlegend=False, marker=dict(size=0)
             ))
             
-    fig7.update_xaxes(
-        tickangle=45,
-        type='category', 
-        dtick=1 
-    ) 
+    fig7.update_xaxes(tickangle=45, type='category', dtick=1) 
     
     st.plotly_chart(fig7, use_container_width=True)
 else:
@@ -232,40 +245,29 @@ def get_unique_list(df, col):
 
 all_notenames = get_unique_list(df, 'BotNoteName')
 
-
-# 使用 form 确保点击按钮后才更新
 with st.form("product_trend_form"):
     
-    # --- 筛选条件布局 ---
     col1, col2 = st.columns(2)
-    
     with col1:
         date_option = st.selectbox(
             "时间范围:",
             ("本月", "本周", "近7天", "近30天", "自定义日期"),
             key='form_date_option'
         )
-
     with col2:
-        # Request 2: 默认值使用 session_state 中的值，该值初始化为 []
         col_notename = st.multiselect("机器人备注名", all_notenames, default=st.session_state.product_filters['notename'], key='form_notename')
     
-    # --- 日期范围输入 (自定义) ---
     start_date = MIN_DATE
     end_date = TODAY
 
     if date_option == "本月":
         start_date = TODAY.replace(day=1)
-        end_date = TODAY
     elif date_option == "本周":
         start_date = TODAY - datetime.timedelta(days=TODAY.weekday())
-        end_date = TODAY
     elif date_option == "近7天":
         start_date = TODAY - datetime.timedelta(days=6)
-        end_date = TODAY
     elif date_option == "近30天":
         start_date = TODAY - datetime.timedelta(days=29)
-        end_date = TODAY
     elif date_option == "自定义日期":
         st.markdown("---")
         st.caption("自定义日期区间:")
@@ -275,11 +277,10 @@ with st.form("product_trend_form"):
         with date_range_cols[1]:
             end_date = st.date_input("结束日期", st.session_state.product_filters['end_date'], key='form_end_date', max_value=MAX_DATE, label_visibility="collapsed")
             
-
     submitted = st.form_submit_button("🔍 查询趋势 / 更新数据源")
 
 
-# --- 8. 执行筛选 (Product Trend) ---
+# --- 8. 执行筛选 ---
 if submitted or not st.session_state.query_submitted:
     
     current_notenames = col_notename
@@ -288,10 +289,9 @@ if submitted or not st.session_state.query_submitted:
     df_product_filtered_temp = df[
         (df['Date'].dt.date >= start_date) & 
         (df['Date'].dt.date <= end_date) &
-        (df['BotNoteName'].isin(current_notenames)) # 仅根据备注名过滤
+        (df['BotNoteName'].isin(current_notenames))
     ].copy()
     
-    # 存储筛选结果和当前过滤器状态
     st.session_state.df_product_filtered = df_product_filtered_temp
     st.session_state.query_submitted = True
     st.session_state.product_filters = {
@@ -304,12 +304,11 @@ if submitted or not st.session_state.query_submitted:
     if submitted:
         st.rerun()
 
-# 使用 Session State 中的数据
 df_product_filtered = st.session_state.df_product_filtered
 current_product_filters = st.session_state.product_filters
 
 
-# --- 9. 产品趋势分析 (支持多选聚合) ---
+# --- 9. 聚合趋势分析 ---
 
 st.markdown("---")
 st.subheader(f"📊 聚合趋势分析 (时间: {current_product_filters['start_date'].strftime('%m.%d')} - {current_product_filters['end_date'].strftime('%m.%d')})")
@@ -319,13 +318,10 @@ if not current_product_filters['notename']:
 elif df_product_filtered.empty:
     st.info("当前筛选条件下没有找到任何数据。请调整筛选条件。")
 else:
-    # 核心修改：对所有通过筛选的行进行日期分组聚合 (支持多选聚合)
     df_trend_data = df_product_filtered.groupby('Date')[['Consultations', 'Leads']].sum().reset_index()
-    
     df_trend_data['日期'] = df_trend_data['Date'].dt.strftime('%m.%d')
     df_trend_data = df_trend_data.rename(columns={'Consultations': '咨询', 'Leads': '线索'})
 
-    # 汇总显示当前筛选的范围
     current_notename_list = current_product_filters['notename']
     title_suffix = ""
     if len(current_notename_list) == len(all_notenames):
@@ -348,12 +344,7 @@ else:
                 name=trace.name + ' 标签', showlegend=False, marker=dict(size=0)
             ))
     
-    fig9.update_xaxes(
-        tickangle=45,
-        type='category', 
-        dtick=1 
-    ) 
-    
+    fig9.update_xaxes(tickangle=45, type='category', dtick=1) 
     st.plotly_chart(fig9, use_container_width=True)
 
 
@@ -361,7 +352,6 @@ else:
 st.markdown("---")
 date_filter_display = f"{current_product_filters['start_date'].strftime('%Y-%m-%d')} 至 {current_product_filters['end_date'].strftime('%Y-%m-%d')}"
 notename_display = f"机器人: {len(current_product_filters['notename'])} 个"
-
 
 with st.expander(f"查看源数据 (筛选区间: {current_product_filters['date_option']} / {notename_display})", expanded=False):
     st.dataframe(df_product_filtered.sort_values('Date', ascending=True), use_container_width=True)
