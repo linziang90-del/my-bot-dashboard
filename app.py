@@ -6,7 +6,7 @@ import datetime
 import gspread 
 
 # --- 配置 ---
-SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YYkB1U' 
+SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U' 
 
 # 缓存时间 30分钟
 @st.cache_data(ttl=1800) 
@@ -533,3 +533,4 @@ with st.expander(f"查看源数据 (筛选区间: {current_product_filters['date
         st.dataframe(df_product_filtered.sort_values('Date', ascending=True), use_container_width=True)
     except:
         st.dataframe(df_product_filtered.sort_values('Date', ascending=True), width='stretch')
+
