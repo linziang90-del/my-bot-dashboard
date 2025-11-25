@@ -6,10 +6,10 @@ import datetime
 import gspread 
 
 # --- 配置 ---
-SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U' 
+SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YYkB1U' 
 
 # 缓存时间 30分钟
-@st.cache_data(ttl=3600) 
+@st.cache_data(ttl=1800) 
 def load_data():
     """连接 Google Sheets 并加载数据 (高性能版)"""
     try:
@@ -252,7 +252,7 @@ REQUIRED_GROUPS = [
     '投放一组', '投放二组', '投放三组'
 ]
 
-# --- 预先计算 Bot 周度对比数据 ---
+# --- 预先计算 Bot 周度对比数据 (用于排名) ---
 df_week = df[df['Date'].dt.date >= last_week_start].copy()
 df_cw = df_week[df_week['Date'].dt.date >= CURRENT_WEEK_START]
 df_lw = df_week[df_week['Date'].dt.date <= last_week_end]
@@ -309,31 +309,112 @@ if not groups_to_render:
 # 使用 tabs 替换 expander
 tabs = st.tabs(groups_to_render)
 
+# --- 新增的指标对比计算函数 ---
+def calculate_group_metrics_with_delta(df_group):
+    # 月度对比
+    tm_c, tm_l, tm_days = get_data_in_range(df_group, CURRENT_MONTH_START, TODAY)
+    lm_c, lm_l, lm_days = get_data_in_range(df_group, last_month_start, last_month_end)
+    
+    tm_avg_c = tm_c / max(1, tm_days)
+    lm_avg_c = lm_c / max(1, lm_days)
+    tm_avg_l = tm_l / max(1, tm_days)
+    lm_avg_l = lm_l / max(1, lm_days)
+    
+    delta_month_c = tm_avg_c - lm_avg_c
+    delta_month_l = tm_avg_l - lm_avg_l
+    
+    # 周度对比
+    tw_c, tw_l, tw_days = get_data_in_range(df_group, CURRENT_WEEK_START, TODAY)
+    lw_c, lw_l, lw_days = get_data_in_range(df_group, last_week_start, last_week_end)
+    
+    tw_avg_c = tw_c / max(1, tw_days)
+    lw_avg_c = lw_c / max(1, lw_days)
+    tw_avg_l = tw_l / max(1, tw_days)
+    lw_avg_l = lw_l / max(1, lw_days)
+    
+    delta_week_c = tw_avg_c - lw_avg_c
+    delta_week_l = tw_avg_l - lw_avg_l
+    
+    # 日度对比
+    t_c, t_l, _ = get_data_in_range(df_group, TODAY, TODAY)
+    y_c, y_l, _ = get_data_in_range(df_group, yesterday, yesterday)
+    
+    delta_day_c = t_c - y_c
+    delta_day_l = t_l - y_l
+    
+    return {
+        'tm_c': tm_c, 'tm_l': tm_l, 'delta_month_c': delta_month_c, 'delta_month_l': delta_month_l,
+        'tw_c': tw_c, 'tw_l': tw_l, 'delta_week_c': delta_week_c, 'delta_week_l': delta_week_l,
+        't_c': t_c, 't_l': t_l, 'delta_day_c': delta_day_c, 'delta_day_l': delta_day_l,
+    }
+
 for tab, group_name in zip(tabs, groups_to_render):
     with tab:
         df_group_standard = df[df['Group'] == group_name]
         df_group_compare = df_compare[df_compare['Group'] == group_name]
 
-        # --- 1. 标准核心指标计算 ---
-        tm_c, tm_l, tm_days = get_data_in_range(df_group_standard, CURRENT_MONTH_START, TODAY)
-        tw_c, tw_l, _ = get_data_in_range(df_group_standard, CURRENT_WEEK_START, TODAY)
-        t_c, t_l, _ = get_data_in_range(df_group_standard, TODAY, TODAY)
+        # --- 1. 标准核心指标计算 (新增对比) ---
+        metrics = calculate_group_metrics_with_delta(df_group_standard)
         
         col_m_c, col_m_l, col_w_c, col_w_l, col_d_c, col_d_l = st.columns(6)
 
-        with col_m_c: st.metric("本月总咨询", f"{tm_c:,}")
-        with col_m_l: st.metric("本月总线索", f"{tm_l:,}")
-        with col_w_c: st.metric("本周咨询", f"{tw_c:,}")
-        with col_w_l: st.metric("本周线索", f"{tw_l:,}")
-        with col_d_c: st.metric("今日咨询", f"{t_c:,}")
-        with col_d_l: st.metric("今日线索", f"{t_l:,}")
+        # 月度咨询 (vs 上月日均)
+        with col_m_c: 
+            st.metric(
+                "本月总咨询", 
+                f"{metrics['tm_c']:,}", 
+                f"日均差值: {metrics['delta_month_c']:+.1f}",
+                delta_color="normal"
+            )
+        # 月度线索 (vs 上月日均)
+        with col_m_l: 
+            st.metric(
+                "本月总线索", 
+                f"{metrics['tm_l']:,}", 
+                f"日均差值: {metrics['delta_month_l']:+.1f}",
+                delta_color="normal"
+            )
+            
+        # 周咨询 (vs 上周日均)
+        with col_w_c: 
+            st.metric(
+                "本周咨询", 
+                f"{metrics['tw_c']:,}", 
+                f"日均差值: {metrics['delta_week_c']:+.1f}",
+                delta_color="normal"
+            )
+        # 周线索 (vs 上周日均)
+        with col_w_l: 
+            st.metric(
+                "本周线索", 
+                f"{metrics['tw_l']:,}", 
+                f"日均差值: {metrics['delta_week_l']:+.1f}",
+                delta_color="normal"
+            )
+            
+        # 今日咨询 (vs 昨日总数)
+        with col_d_c: 
+            st.metric(
+                "今日咨询", 
+                f"{metrics['t_c']:,}", 
+                f"差值: {metrics['delta_day_c']:+d} vs 昨日", # 今日 vs 昨日是总数对比，无需日均
+                delta_color="normal"
+            )
+        # 今日线索 (vs 昨日总数)
+        with col_d_l: 
+            st.metric(
+                "今日线索", 
+                f"{metrics['t_l']:,}", 
+                f"差值: {metrics['delta_day_l']:+d} vs 昨日",
+                delta_color="normal"
+            )
 
         st.markdown("---")
         st.markdown("##### 📈 本周日均涨跌排名 (Bot)")
         st.caption("ℹ️ **对比周期：**本周日均 vs 上周日均 (已进行时间标准化)")
 
         
-        # --- 2. 咨询涨跌排名 ---
+        # --- 2. 咨询涨跌排名 (Bot) ---
         st.markdown("<div style='border: 1px solid #ddd; padding: 10px; border-radius: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
         st.markdown("###### 🗣️ 咨询数变化")
         max_down_c = df_group_compare[df_group_compare['Diff_Avg_Consultations'] < 0].sort_values(by='Pct_Change_Consultations', ascending=True).head(1)
@@ -349,7 +430,7 @@ for tab, group_name in zip(tabs, groups_to_render):
                     label="🔻 日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
                     delta=delta_val, 
-                    delta_color="normal" # 负数 delta="normal" 显示 红色
+                    delta_color="normal" 
                 )
             else:
                 st.info("日均无咨询下降的 Bot")
@@ -362,14 +443,14 @@ for tab, group_name in zip(tabs, groups_to_render):
                     label="⬆️ 日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
                     delta=delta_val, 
-                    delta_color="normal" # 正数 delta="normal" 显示 绿色
+                    delta_color="normal" 
                 )
             else:
                 st.info("日均无咨询上升的 Bot")
         st.markdown("</div>", unsafe_allow_html=True) 
 
         
-        # --- 3. 线索涨跌排名 ---
+        # --- 3. 线索涨跌排名 (Bot) ---
         st.markdown("<div style='border: 1px solid #ddd; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)
         st.markdown("###### 🔗 线索数变化")
         max_down_l = df_group_compare[df_group_compare['Diff_Avg_Leads'] < 0].sort_values(by='Pct_Change_Leads', ascending=True).head(1)
@@ -385,7 +466,7 @@ for tab, group_name in zip(tabs, groups_to_render):
                     label="🔻 日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
                     delta=delta_val, 
-                    delta_color="normal" # 负数 delta="normal" 显示 红色
+                    delta_color="normal" 
                 )
             else:
                 st.info("日均无线索下降的 Bot")
@@ -398,7 +479,7 @@ for tab, group_name in zip(tabs, groups_to_render):
                     label="⬆️ 日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
                     delta=delta_val, 
-                    delta_color="normal" # 正数 delta="normal" 显示 绿色
+                    delta_color="normal" 
                 )
             else:
                 st.info("日均无线索上升的 Bot")
@@ -408,7 +489,7 @@ st.markdown("---")
 
 
 # ====================================================================
-# --- SECTION 8: 趋势分析筛选 (原 Section 7) ---
+# --- SECTION 8: 趋势分析筛选 ---
 # ====================================================================
 
 st.header("📊 趋势分析筛选")
