@@ -6,7 +6,7 @@ import datetime
 import gspread 
 
 # --- 配置 ---
-SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YYkB1U' 
+SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U' 
 
 # 缓存时间 30分钟
 @st.cache_data(ttl=1800) 
@@ -36,7 +36,7 @@ df = load_data()
 # --- 2. 数据清洗和预处理 ---
 if df.empty:
     st.set_page_config(page_title="TG BOT数据看板", layout="wide")
-    st.title("🚀 TG BOT数据看板 (30Min更新)")
+    st.title("🚀 TG BOT数据看板") # 默认标题
     st.warning("数据表为空或加载失败。")
     st.stop()
 
@@ -58,7 +58,7 @@ df = df.dropna(subset=['Date'])
 df = df.sort_values('Date', ascending=True)
 
 # ==============================================================================
-# 🔥 核心修复：在此处统一计算所有时间变量，防止 NameError
+# 🔥 时间变量计算
 # ==============================================================================
 MAX_DATE = df['Date'].max().date()
 MIN_DATE = df['Date'].min().date()
@@ -91,7 +91,7 @@ if 'product_filters' not in st.session_state:
     st.session_state.product_filters = {
         'date_option': '本月',
         'notename': [], 
-        'start_date': CURRENT_MONTH_START, # 使用定义好的变量
+        'start_date': CURRENT_MONTH_START, 
         'end_date': TODAY,
     }
     st.session_state.query_submitted = False
@@ -99,6 +99,7 @@ if 'product_filters' not in st.session_state:
 # --- 3. 页面配置与标题 ---
 st.set_page_config(page_title="TG BOT数据看板", layout="wide")
 
+# CSS 优化
 st.markdown("""
 <style>
 .stMultiSelect div[data-testid="stMultiSelect"] > div > div:nth-child(2) div[data-baseweb="tag"] {
@@ -109,10 +110,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🚀 TG BOT数据看板 (30Min更新)")
+# Request 1: 标题去掉文字 (30Min更新)
+st.title("🚀 TG BOT数据看板")
 st.markdown(f"**数据更新至：{str(TODAY)}**")
 
-# --- 4. 核心数据指标 (3行4列矩阵) ---
+# --- 4. 核心数据指标 (Request 2, 3, 4, 5, 6) ---
 st.header("📊 核心数据指标")
 
 def get_data_in_range(df, start, end):
@@ -121,11 +123,12 @@ def get_data_in_range(df, start, end):
     subset = df[mask]
     total_consult = int(subset['Consultations'].sum())
     total_lead = int(subset['Leads'].sum())
+    # 计算天数 (如果 start=end，也是1天)
     days = (end - start).days + 1
     days = days if days > 0 else 1
     return total_consult, total_lead, days
 
-# 计算指标
+# --- 计算各周期数据 ---
 tm_c, tm_l, tm_days = get_data_in_range(df, CURRENT_MONTH_START, TODAY)
 lm_c, lm_l, lm_days = get_data_in_range(df, last_month_start, last_month_end)
 tw_c, tw_l, _ = get_data_in_range(df, CURRENT_WEEK_START, TODAY)
@@ -133,39 +136,77 @@ lw_c, lw_l, _ = get_data_in_range(df, last_week_start, last_week_end)
 t_c, t_l, _ = get_data_in_range(df, TODAY, TODAY)
 y_c, y_l, _ = get_data_in_range(df, yesterday, yesterday)
 
-# 布局展示
+# --- 1. 月度概览 (Request 2 & 3) ---
 st.markdown("##### 📅 月度概览")
-row1_1, row1_2, row1_3, row1_4 = st.columns(4)
-with row1_1:
-    st.metric("上月总咨询数", f"{lm_c:,}", f"日均 {lm_c/lm_days:.1f}", delta_color="off")
-with row1_2:
-    st.metric("上月总线索数", f"{lm_l:,}", f"日均 {lm_l/lm_days:.1f}", delta_color="off")
-with row1_3:
-    st.metric("本月总咨询数", f"{tm_c:,}", f"日均 {tm_c/tm_days:.1f}", delta_color="off")
-with row1_4:
-    st.metric("本月总线索数", f"{tm_l:,}", f"日均 {tm_l/tm_days:.1f}", delta_color="off")
 
-st.markdown("##### 🗓️ 周度概览")
+# 计算日均和差值
+lm_avg_c = lm_c / lm_days
+lm_avg_l = lm_l / lm_days
+tm_avg_c = tm_c / tm_days
+tm_avg_l = tm_l / tm_days
+
+diff_c = tm_avg_c - lm_avg_c
+diff_l = tm_avg_l - lm_avg_l
+
+row1_1, row1_2, row1_3, row1_4 = st.columns(4)
+
+# 上月：Request 2 - 前面不要有上箭头 (delta_color="off")
+with row1_1:
+    st.metric("上月总咨询数", f"{lm_c:,}", f"日均 {lm_avg_c:.1f}", delta_color="off")
+with row1_2:
+    st.metric("上月总线索数", f"{lm_l:,}", f"日均 {lm_avg_l:.1f}", delta_color="off")
+
+# 本月：Request 3 - 绿色高/红色低，显示差值 (delta_color="normal" 会自动根据正负变色)
+# 格式：日均 367.3 (差值 +50.0)
+with row1_3:
+    st.metric("本月总咨询数", f"{tm_c:,}", f"日均 {tm_avg_c:.1f} (差值 {diff_c:+.1f})", delta_color="normal")
+with row1_4:
+    st.metric("本月总线索数", f"{tm_l:,}", f"日均 {tm_avg_l:.1f} (差值 {diff_l:+.1f})", delta_color="normal")
+
+
+# --- 2. 周度概览 (Request 4) ---
+st.markdown("##### 🗓️ 周度概览 (周一到周日)") # Request 4: 标题修改
+
 row2_1, row2_2, row2_3, row2_4 = st.columns(4)
 with row2_1:
-    st.metric("上周咨询数 (一-日)", f"{lw_c:,}")
+    st.metric("上周咨询数", f"{lw_c:,}") # Request 4: 去掉括号说明
 with row2_2:
-    st.metric("上周线索数 (一-日)", f"{lw_l:,}")
+    st.metric("上周线索数", f"{lw_l:,}")
 with row2_3:
-    st.metric("本周咨询数 (一-今)", f"{tw_c:,}")
+    st.metric("本周咨询数", f"{tw_c:,}")
 with row2_4:
-    st.metric("本周线索数 (一-今)", f"{tw_l:,}")
+    st.metric("本周线索数", f"{tw_l:,}")
 
+
+# --- 3. 日度概览 (Request 5 & 6) ---
 st.markdown("##### ⏰ 日度概览")
+
+# 计算今日同比昨日变化
+def calc_pct(curr, prev):
+    if prev == 0:
+        return 0.0 if curr == 0 else 100.0
+    return (curr - prev) / prev * 100
+
+pct_c = calc_pct(t_c, y_c)
+pct_l = calc_pct(t_l, y_l)
+
 row3_1, row3_2, row3_3, row3_4 = st.columns(4)
+
+# 日期字符串
+y_str = yesterday.strftime('%m-%d')
+t_str = TODAY.strftime('%m-%d')
+
+# Request 5: 昨日显示日期
 with row3_1:
-    st.metric("昨日咨询数", f"{y_c:,}")
+    st.metric(f"昨日咨询数 ({y_str})", f"{y_c:,}") 
 with row3_2:
-    st.metric("昨日线索数", f"{y_l:,}")
+    st.metric(f"昨日线索数 ({y_str})", f"{y_l:,}")
+
+# Request 6: 今日显示对比昨日百分比
 with row3_3:
-    st.metric(f"今日咨询数 ({str(TODAY)[5:]})", f"{t_c:,}")
+    st.metric(f"今日咨询数 ({t_str})", f"{t_c:,}", f"{pct_c:.1f}% vs 昨日", delta_color="normal")
 with row3_4:
-    st.metric(f"今日线索数 ({str(TODAY)[5:]})", f"{t_l:,}")
+    st.metric(f"今日线索数 ({t_str})", f"{t_l:,}", f"{pct_l:.1f}% vs 昨日", delta_color="normal")
 
 st.markdown("---")
 
@@ -203,7 +244,6 @@ st.markdown("---")
 # --- 6. 当月总趋势折线图 ---
 st.header("📈 当月总趋势") 
 
-# 确保使用全局变量 CURRENT_MONTH_START
 df_month = df[df['Date'].dt.date >= CURRENT_MONTH_START].groupby('Date')[['Consultations', 'Leads']].sum().reset_index()
 
 if not df_month.empty:
@@ -284,7 +324,6 @@ if submitted or not st.session_state.query_submitted:
     
     current_notenames = col_notename
     
-    # 核心数据过滤逻辑
     df_product_filtered_temp = df[
         (df['Date'].dt.date >= start_date) & 
         (df['Date'].dt.date <= end_date) &
@@ -349,7 +388,6 @@ else:
 
 # --- 10. 查看源数据 ---
 st.markdown("---")
-date_filter_display = f"{current_product_filters['start_date'].strftime('%Y-%m-%d')} 至 {current_product_filters['end_date'].strftime('%Y-%m-%d')}"
 notename_display = f"机器人: {len(current_product_filters['notename'])} 个"
 
 with st.expander(f"查看源数据 (筛选区间: {current_product_filters['date_option']} / {notename_display})", expanded=False):
