@@ -4,9 +4,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import datetime
 import gspread 
+import numpy as np # 引入 numpy 用于处理 delta 0 值
 
 # --- 配置 ---
-SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YYkB1U' 
+SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U' 
 
 # 缓存时间 30分钟
 @st.cache_data(ttl=1800) 
@@ -357,22 +358,31 @@ for tab, group_name in zip(tabs, groups_to_render):
         metrics = calculate_group_metrics_with_delta(df_group_standard)
         
         col_m_c, col_m_l, col_w_c, col_w_l, col_d_c, col_d_l = st.columns(6)
+        
+        # 辅助函数: 格式化 delta 文本
+        def format_delta_text(delta_val, is_avg=True):
+            if is_avg:
+                return f"日均差值: {delta_val:+.1f}"
+            else:
+                return f"差值: {delta_val:+d} vs 昨日"
 
         # 月度咨询 (vs 上月日均)
         with col_m_c: 
             st.metric(
                 "本月总咨询", 
                 f"{metrics['tm_c']:,}", 
-                f"日均差值: {metrics['delta_month_c']:+.1f}",
-                delta_color="normal"
+                delta=metrics['delta_month_c'], # 传递数值
+                delta_color="normal",
+                help=format_delta_text(metrics['delta_month_c'], is_avg=True) # 使用 help 提示格式化的文本
             )
         # 月度线索 (vs 上月日均)
         with col_m_l: 
             st.metric(
                 "本月总线索", 
                 f"{metrics['tm_l']:,}", 
-                f"日均差值: {metrics['delta_month_l']:+.1f}",
-                delta_color="normal"
+                delta=metrics['delta_month_l'], # 传递数值
+                delta_color="normal",
+                help=format_delta_text(metrics['delta_month_l'], is_avg=True) 
             )
             
         # 周咨询 (vs 上周日均)
@@ -380,16 +390,18 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "本周咨询", 
                 f"{metrics['tw_c']:,}", 
-                f"日均差值: {metrics['delta_week_c']:+.1f}",
-                delta_color="normal"
+                delta=metrics['delta_week_c'], # 传递数值
+                delta_color="normal",
+                help=format_delta_text(metrics['delta_week_c'], is_avg=True) 
             )
         # 周线索 (vs 上周日均)
         with col_w_l: 
             st.metric(
                 "本周线索", 
                 f"{metrics['tw_l']:,}", 
-                f"日均差值: {metrics['delta_week_l']:+.1f}",
-                delta_color="normal"
+                delta=metrics['delta_week_l'], # 传递数值
+                delta_color="normal",
+                help=format_delta_text(metrics['delta_week_l'], is_avg=True) 
             )
             
         # 今日咨询 (vs 昨日总数)
@@ -397,16 +409,18 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "今日咨询", 
                 f"{metrics['t_c']:,}", 
-                f"差值: {metrics['delta_day_c']:+d} vs 昨日", # 今日 vs 昨日是总数对比，无需日均
-                delta_color="normal"
+                delta=metrics['delta_day_c'], # 传递数值
+                delta_color="normal",
+                help=format_delta_text(metrics['delta_day_c'], is_avg=False) 
             )
         # 今日线索 (vs 昨日总数)
         with col_d_l: 
             st.metric(
                 "今日线索", 
                 f"{metrics['t_l']:,}", 
-                f"差值: {metrics['delta_day_l']:+d} vs 昨日",
-                delta_color="normal"
+                delta=metrics['delta_day_l'], # 传递数值
+                delta_color="normal",
+                help=format_delta_text(metrics['delta_day_l'], is_avg=False) 
             )
 
         st.markdown("---")
@@ -417,7 +431,9 @@ for tab, group_name in zip(tabs, groups_to_render):
         # --- 2. 咨询涨跌排名 (Bot) ---
         st.markdown("<div style='border: 1px solid #ddd; padding: 10px; border-radius: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
         st.markdown("###### 🗣️ 咨询数变化")
+        # 筛选出日均差值大于 0 的，且最大的 Bot
         max_down_c = df_group_compare[df_group_compare['Diff_Avg_Consultations'] < 0].sort_values(by='Pct_Change_Consultations', ascending=True).head(1)
+        # 筛选出日均差值小于 0 的，且最小的 Bot
         max_up_c = df_group_compare[df_group_compare['Diff_Avg_Consultations'] > 0].sort_values(by='Pct_Change_Consultations', ascending=False).head(1)
         
         col_c_down, col_c_up = st.columns(2)
@@ -425,12 +441,15 @@ for tab, group_name in zip(tabs, groups_to_render):
         with col_c_down:
             if not max_down_c.empty:
                 down_data = max_down_c.iloc[0]
-                delta_val = f"{down_data['Pct_Change_Consultations']:.1f}% ({down_data['Diff_Avg_Consultations']:.1f}次/日)"
+                pct_delta = down_data['Pct_Change_Consultations']
+                # Delta 标签文本，仅用于提示
+                help_text = f"日均差值: {down_data['Diff_Avg_Consultations']:+.1f}次/日" 
                 st.metric(
                     label="🔻 日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
-                    delta=delta_val, 
-                    delta_color="normal" 
+                    delta=pct_delta, # 传递百分比数值，负数自动红色向下
+                    delta_color="normal",
+                    help=help_text
                 )
             else:
                 st.info("日均无咨询下降的 Bot")
@@ -438,12 +457,15 @@ for tab, group_name in zip(tabs, groups_to_render):
         with col_c_up:
             if not max_up_c.empty:
                 up_data = max_up_c.iloc[0]
-                delta_val = f"+{up_data['Pct_Change_Consultations']:.1f}% (+{up_data['Diff_Avg_Consultations']:.1f}次/日)"
+                pct_delta = up_data['Pct_Change_Consultations']
+                # Delta 标签文本，仅用于提示
+                help_text = f"日均差值: {up_data['Diff_Avg_Consultations']:+.1f}次/日"
                 st.metric(
                     label="⬆️ 日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
-                    delta=delta_val, 
-                    delta_color="normal" 
+                    delta=pct_delta, # 传递百分比数值，正数自动绿色向上
+                    delta_color="normal",
+                    help=help_text
                 )
             else:
                 st.info("日均无咨询上升的 Bot")
@@ -461,12 +483,14 @@ for tab, group_name in zip(tabs, groups_to_render):
         with col_l_down:
             if not max_down_l.empty:
                 down_data = max_down_l.iloc[0]
-                delta_val = f"{down_data['Pct_Change_Leads']:.1f}% ({down_data['Diff_Avg_Leads']:.1f}次/日)"
+                pct_delta = down_data['Pct_Change_Leads']
+                help_text = f"日均差值: {down_data['Diff_Avg_Leads']:+.1f}次/日"
                 st.metric(
                     label="🔻 日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
-                    delta=delta_val, 
-                    delta_color="normal" 
+                    delta=pct_delta, # 传递百分比数值，负数自动红色向下
+                    delta_color="normal", 
+                    help=help_text
                 )
             else:
                 st.info("日均无线索下降的 Bot")
@@ -474,12 +498,14 @@ for tab, group_name in zip(tabs, groups_to_render):
         with col_l_up:
             if not max_up_l.empty:
                 up_data = max_up_l.iloc[0]
-                delta_val = f"+{up_data['Pct_Change_Leads']:.1f}% (+{up_data['Diff_Avg_Leads']:.1f}次/日)"
+                pct_delta = up_data['Pct_Change_Leads']
+                help_text = f"日均差值: {up_data['Diff_Avg_Leads']:+.1f}次/日"
                 st.metric(
                     label="⬆️ 日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
-                    delta=delta_val, 
-                    delta_color="normal" 
+                    delta=pct_delta, # 传递百分比数值，正数自动绿色向上
+                    delta_color="normal", 
+                    help=help_text
                 )
             else:
                 st.info("日均无线索上升的 Bot")
