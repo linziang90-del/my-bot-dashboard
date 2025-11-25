@@ -6,10 +6,10 @@ import datetime
 import gspread 
 
 # --- 配置 ---
-SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U' 
+SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YYkB1U' 
 
 # 缓存时间 30分钟
-@st.cache_data(ttl=3600) 
+@st.cache_data(ttl=1800) 
 def load_data():
     """连接 Google Sheets 并加载数据 (高性能版)"""
     try:
@@ -127,6 +127,12 @@ def get_data_in_range(df, start, end):
     days = days if days > 0 else 1
     return total_consult, total_lead, days
 
+def calc_pct(curr, prev):
+    """计算百分比变化"""
+    if prev == 0:
+        return 0.0 if curr == 0 else 100.0
+    return (curr - prev) / prev * 100
+
 tm_c, tm_l, tm_days = get_data_in_range(df, CURRENT_MONTH_START, TODAY)
 lm_c, lm_l, lm_days = get_data_in_range(df, last_month_start, last_month_end)
 tw_c, tw_l, _ = get_data_in_range(df, CURRENT_WEEK_START, TODAY)
@@ -134,15 +140,14 @@ lw_c, lw_l, _ = get_data_in_range(df, last_week_start, last_week_end)
 t_c, t_l, _ = get_data_in_range(df, TODAY, TODAY)
 y_c, y_l, _ = get_data_in_range(df, yesterday, yesterday)
 
-# 略去核心指标展示代码... (保持 V13 逻辑)
 lm_avg_c = lm_c / lm_days
 lm_avg_l = lm_l / lm_days
 tm_avg_c = tm_c / tm_days
 tm_avg_l = tm_l / tm_days
 diff_c = tm_avg_c - lm_avg_c
 diff_l = tm_avg_l - lm_avg_l
-pct_c = 0.0 if y_c == 0 else (t_c - y_c) / y_c * 100
-pct_l = 0.0 if y_l == 0 else (t_l - y_l) / y_l * 100
+pct_c = calc_pct(t_c, y_c)
+pct_l = calc_pct(t_l, y_l)
 y_str = yesterday.strftime('%m-%d')
 t_str = TODAY.strftime('%m-%d')
 
@@ -237,12 +242,13 @@ else:
 st.markdown("---")
 
 # ====================================================================
-# 🔥🔥🔥 NEW SECTION 7: 各小组核心数据指标
+# 🔥 SECTION 7: 各小组核心数据指标 (使用日均对比)
 # ====================================================================
 st.header("🏢 各小组核心数据指标")
 
 REQUIRED_GROUPS = [
     '项目一组', '项目二组', '项目三组', '项目四组', 
+    '007TG组',
     '投放一组', '投放二组', '投放三组'
 ]
 
@@ -251,20 +257,31 @@ df_week = df[df['Date'].dt.date >= last_week_start].copy()
 df_cw = df_week[df_week['Date'].dt.date >= CURRENT_WEEK_START]
 df_lw = df_week[df_week['Date'].dt.date <= last_week_end]
 
-# 聚合本周和上周的咨询数 (按组和 Bot)
 df_cw_agg = df_cw.groupby(['Group', 'BotNoteName'])['Consultations'].sum().reset_index(name='CW_Consultations')
 df_lw_agg = df_lw.groupby(['Group', 'BotNoteName'])['Consultations'].sum().reset_index(name='LW_Consultations')
 
-# 合并并计算涨跌
 df_compare = pd.merge(df_cw_agg, df_lw_agg, on=['Group', 'BotNoteName'], how='outer').fillna(0)
-df_compare['Diff'] = df_compare['CW_Consultations'] - df_compare['LW_Consultations']
 
-def calculate_pct_change(row):
-    if row['LW_Consultations'] == 0:
-        return 100.0 if row['CW_Consultations'] > 0 else 0.0
-    return (row['CW_Consultations'] - row['LW_Consultations']) / row['LW_Consultations'] * 100
+# 计算周数
+CURRENT_WEEK_DAYS = (TODAY - CURRENT_WEEK_START).days + 1
+CW_DAYS = max(1, CURRENT_WEEK_DAYS)
+LW_DAYS = 7 # 上周总是完整的 7 天
+
+# 计算日均值
+df_compare['LW_Avg'] = df_compare['LW_Consultations'] / LW_DAYS
+df_compare['CW_Avg'] = df_compare['CW_Consultations'] / CW_DAYS
+
+# 计算日均差值和百分比
+df_compare['Diff_Avg'] = df_compare['CW_Avg'] - df_compare['LW_Avg']
+
+def calculate_pct_change_avg(row):
+    """基于日均值计算百分比变化"""
+    if row['LW_Avg'] == 0:
+        # 如果上周日均是 0，本周有数据即视为 100% 增长（为简化展示，避免无限大）
+        return 100.0 if row['CW_Avg'] > 0 else 0.0
+    return (row['CW_Avg'] - row['LW_Avg']) / row['LW_Avg'] * 100
     
-df_compare['Pct_Change'] = df_compare.apply(calculate_pct_change, axis=1)
+df_compare['Pct_Change'] = df_compare.apply(calculate_pct_change_avg, axis=1)
 # -----------------------------------
 
 
@@ -275,7 +292,6 @@ if not groups_to_render:
     st.info("当前数据集中未找到指定小组数据。")
 
 for group_name in groups_to_render:
-    # 过滤出当前组的数据
     df_group_standard = df[df['Group'] == group_name]
     df_group_compare = df_compare[df_compare['Group'] == group_name]
 
@@ -286,7 +302,6 @@ for group_name in groups_to_render:
         tw_c, tw_l, _ = get_data_in_range(df_group_standard, CURRENT_WEEK_START, TODAY)
         t_c, t_l, _ = get_data_in_range(df_group_standard, TODAY, TODAY)
         
-        # 布局：月度、周度、日度
         col_m_c, col_m_l, col_w_c, col_w_l, col_d_c, col_d_l = st.columns(6)
 
         with col_m_c: st.metric("本月总咨询", f"{tm_c:,}")
@@ -298,15 +313,16 @@ for group_name in groups_to_render:
 
         st.markdown("---")
         st.markdown("##### 📈 本周咨询涨跌排名 (Bot)")
+        # 提示用户现在是日均对比
+        st.caption("ℹ️ **对比周期：**本周日均咨询数 vs 上周日均咨询数 (已进行时间标准化)")
 
         # --- 2. 查找涨跌幅最大的 Bot ---
         
-        # 查找下降最多 (最低百分比)
-        max_down_row = df_group_compare[df_group_compare['Pct_Change'] < 0].sort_values(by='Pct_Change', ascending=True).head(1)
+        # 查找下降最多 (最低百分比，且 Diff_Avg < 0)
+        max_down_row = df_group_compare[df_group_compare['Diff_Avg'] < 0].sort_values(by='Pct_Change', ascending=True).head(1)
         
-        # 查找上升最多 (最高百分比)
-        # 确保 CW_Consultations > LW_Consultations 或 Pct_Change > 0 (后者已在筛选中)
-        max_up_row = df_group_compare[df_group_compare['Pct_Change'] > 0].sort_values(by='Pct_Change', ascending=False).head(1)
+        # 查找上升最多 (最高百分比，且 Diff_Avg > 0)
+        max_up_row = df_group_compare[df_group_compare['Diff_Avg'] > 0].sort_values(by='Pct_Change', ascending=False).head(1)
         
         col_down, col_up = st.columns(2)
 
@@ -314,37 +330,36 @@ for group_name in groups_to_render:
         with col_down:
             if not max_down_row.empty:
                 down_data = max_down_row.iloc[0]
-                # Pct_Change 已经是负数
-                delta_val = f"{down_data['Pct_Change']:.1f}% ({down_data['Diff']:.0f}次)"
+                # 日均差值显示为 '次/日'
+                delta_val = f"{down_data['Pct_Change']:.1f}% ({down_data['Diff_Avg']:.1f}次/日)"
                 st.metric(
-                    label="🔻 下降最多 Bot (本周 vs 上周)", 
+                    label="🔻 日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
                     delta=delta_val, 
-                    delta_color="inverse" # 负数显示红色
+                    delta_color="inverse"
                 )
             else:
-                st.info("本周无咨询下降的 Bot")
+                st.info("本周日均无咨询下降的 Bot")
         
         # 展示上升最多的 Bot
         with col_up:
             if not max_up_row.empty:
                 up_data = max_up_row.iloc[0]
-                # Pct_Change 是正数，Diff 是正数
-                delta_val = f"+{up_data['Pct_Change']:.1f}% (+{up_data['Diff']:.0f}次)"
+                delta_val = f"+{up_data['Pct_Change']:.1f}% (+{up_data['Diff_Avg']:.1f}次/日)"
                 st.metric(
-                    label="⬆️ 上升最多 Bot (本周 vs 上周)", 
+                    label="⬆️ 日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
                     delta=delta_val, 
-                    delta_color="normal" # 正数显示绿色
+                    delta_color="normal"
                 )
             else:
-                st.info("本周无咨询上升的 Bot")
+                st.info("本周日均无咨询上升的 Bot")
 
 st.markdown("---")
 
 
 # ====================================================================
-# --- NEW SECTION 8: 趋势分析筛选 (原 Section 7) ---
+# --- SECTION 8: 趋势分析筛选 (原 Section 7) ---
 # ====================================================================
 
 st.header("📊 趋势分析筛选")
