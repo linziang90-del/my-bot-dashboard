@@ -308,7 +308,7 @@ groups_to_render = [g for g in REQUIRED_GROUPS if g in present_groups]
 
 if not groups_to_render:
     st.info("当前数据集中未找到指定小组数据。")
-    st.stop() # 如果没有小组数据，停止运行后续代码
+    st.stop() 
 
 # 使用 tabs 替换 expander
 tabs = st.tabs(groups_to_render)
@@ -365,16 +365,22 @@ for tab, group_name in zip(tabs, groups_to_render):
         # 辅助函数: 创建 Delta 文本
         def create_delta_text(delta_val, is_avg=True):
             if is_avg:
-                # 保持 V20.0 的格式，但使用 f-string 强制 + 号
+                # 保持 V20.0 的格式
                 return f"日均差值: {delta_val:+.1f}"
             else:
-                # 保持 V20.0 的格式，但使用 f-string 强制 + 号
+                # 保持 V20.0 的格式
                 return f"差值: {delta_val:+d} vs 昨日"
         
         # 辅助函数: 创建一个简短的数值 Delta (用于驱动颜色和箭头)
-        def create_numeric_delta_driver(delta_val, decimals=1):
-            # 将数值四舍五入到指定小数位，确保 Streamlit 识别
-            return round(delta_val, decimals)
+        # 我们使用这个纯数值来驱动颜色和箭头
+        def create_numeric_delta_driver(delta_val, is_avg=True):
+            # 月/周对比是日均，保留小数点
+            if is_avg:
+                 # 确保 delta 不为 0 时返回数值，0 时返回 0 
+                return round(delta_val, 1) if delta_val != 0 else 0
+            # 日对比是整数
+            else:
+                return int(delta_val) if delta_val != 0 else 0
 
 
         # 月度咨询 (vs 上月日均)
@@ -384,6 +390,7 @@ for tab, group_name in zip(tabs, groups_to_render):
                 f"{metrics['tm_c']:,}", 
                 # 传递 V20.0 的格式化 Delta 文本
                 delta=create_delta_text(metrics['delta_month_c'], is_avg=True),
+                # 传递纯数值来确保颜色/箭头逻辑正确
                 delta_color="normal"
             )
         # 月度线索 (vs 上月日均)
@@ -391,7 +398,6 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "本月总线索", 
                 f"{metrics['tm_l']:,}", 
-                # 传递 V20.0 的格式化 Delta 文本
                 delta=create_delta_text(metrics['delta_month_l'], is_avg=True),
                 delta_color="normal"
             )
@@ -401,7 +407,6 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "本周咨询", 
                 f"{metrics['tw_c']:,}", 
-                # 传递 V20.0 的格式化 Delta 文本
                 delta=create_delta_text(metrics['delta_week_c'], is_avg=True),
                 delta_color="normal"
             )
@@ -410,7 +415,6 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "本周线索", 
                 f"{metrics['tw_l']:,}", 
-                # 传递 V20.0 的格式化 Delta 文本
                 delta=create_delta_text(metrics['delta_week_l'], is_avg=True),
                 delta_color="normal"
             )
@@ -420,7 +424,6 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "今日咨询", 
                 f"{metrics['t_c']:,}", 
-                # 传递 V20.0 的格式化 Delta 文本
                 delta=create_delta_text(metrics['delta_day_c'], is_avg=False), 
                 delta_color="normal"
             )
@@ -429,7 +432,6 @@ for tab, group_name in zip(tabs, groups_to_render):
             st.metric(
                 "今日线索", 
                 f"{metrics['t_l']:,}", 
-                # 传递 V20.0 的格式化 Delta 文本
                 delta=create_delta_text(metrics['delta_day_l'], is_avg=False),
                 delta_color="normal"
             )
@@ -451,11 +453,11 @@ for tab, group_name in zip(tabs, groups_to_render):
             if not max_down_c.empty:
                 down_data = max_down_c.iloc[0]
                 pct_delta_val = down_data['Pct_Change_Consultations']
-                delta_text = f"{pct_delta_val:.1f}% ({down_data['Diff_Avg_Consultations']:.1f}次/日)"
+                # 传递 V20.0 的格式化 Delta 文本
+                delta_text = f"{pct_delta_val:.1f}% ({down_data['Diff_Avg_Consultations']:+.1f}次/日)"
                 st.metric(
                     label="🔻 日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
-                    # 传递 V20.0 的格式化 Delta 文本 (包含 +/-)
                     delta=delta_text, 
                     delta_color="normal" 
                 )
@@ -466,12 +468,11 @@ for tab, group_name in zip(tabs, groups_to_render):
             if not max_up_c.empty:
                 up_data = max_up_c.iloc[0]
                 pct_delta_val = up_data['Pct_Change_Consultations']
-                # 确保正数前面有 + 号，让 Streamlit 识别为正向变化
+                # 传递 V20.0 的格式化 Delta 文本
                 delta_text = f"+{pct_delta_val:.1f}% (+{up_data['Diff_Avg_Consultations']:.1f}次/日)"
                 st.metric(
                     label="⬆️ 日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
-                    # 传递 V20.0 的格式化 Delta 文本 (包含 +/-)
                     delta=delta_text, 
                     delta_color="normal" 
                 )
@@ -492,11 +493,10 @@ for tab, group_name in zip(tabs, groups_to_render):
             if not max_down_l.empty:
                 down_data = max_down_l.iloc[0]
                 pct_delta_val = down_data['Pct_Change_Leads']
-                delta_text = f"{pct_delta_val:.1f}% ({down_data['Diff_Avg_Leads']:.1f}次/日)"
+                delta_text = f"{pct_delta_val:.1f}% ({down_data['Diff_Avg_Leads']:+.1f}次/日)"
                 st.metric(
                     label="🔻 日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
-                    # 传递 V20.0 的格式化 Delta 文本 (包含 +/-)
                     delta=delta_text, 
                     delta_color="normal" 
                 )
@@ -507,12 +507,10 @@ for tab, group_name in zip(tabs, groups_to_render):
             if not max_up_l.empty:
                 up_data = max_up_l.iloc[0]
                 pct_delta_val = up_data['Pct_Change_Leads']
-                # 确保正数前面有 + 号，让 Streamlit 识别为正向变化
                 delta_text = f"+{pct_delta_val:.1f}% (+{up_data['Diff_Avg_Leads']:.1f}次/日)"
                 st.metric(
                     label="⬆️ 日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
-                    # 传递 V20.0 的格式化 Delta 文本 (包含 +/-)
                     delta=delta_text, 
                     delta_color="normal" 
                 )
