@@ -153,7 +153,7 @@ pct_l = calc_pct(t_l, y_l)
 y_str = yesterday.strftime('%m-%d')
 t_str = TODAY.strftime('%m-%d')
 
-st.markdown("##### 📅 月度概览")
+st.markdown("##### 月度概览")
 row1_1, row1_2, row1_3, row1_4 = st.columns(4)
 with row1_1: st.metric("上月总咨询数", f"{lm_c:,}", f"日均 {lm_avg_c:.1f}", delta_color="off")
 with row1_2: st.metric("上月总线索数", f"{lm_l:,}", f"日均 {lm_avg_l:.1f}", delta_color="off")
@@ -161,14 +161,14 @@ with row1_2: st.metric("上月总线索数", f"{lm_l:,}", f"日均 {lm_avg_l:.1f
 with row1_3: st.metric("本月总咨询数", f"{tm_c:,}", f"日均 {tm_avg_c:.1f} (差值 {diff_c:+.1f})", delta_color="normal")
 with row1_4: st.metric("本月总线索数", f"{tm_l:,}", f"日均 {tm_avg_l:.1f} (差值 {diff_l:+.1f})", delta_color="normal")
 
-st.markdown("##### 🗓️ 周度概览 (周一到周日)")
+st.markdown("##### 周度概览 (周一到周日)")
 row2_1, row2_2, row2_3, row2_4 = st.columns(4)
 with row2_1: st.metric("上周咨询数", f"{lw_c:,}")
 with row2_2: st.metric("上周线索数", f"{lw_l:,}")
 with row2_3: st.metric("本周咨询数", f"{tw_c:,}")
 with row2_4: st.metric("本周线索数", f"{tw_l:,}")
 
-st.markdown("##### ⏰ 日度概览")
+st.markdown("##### 日度概览")
 row3_1, row3_2, row3_3, row3_4 = st.columns(4)
 with row3_1: st.metric(f"昨日咨询数 ({y_str})", f"{y_c:,}")
 with row3_2: st.metric(f"昨日线索数 ({y_str})", f"{y_l:,}")
@@ -432,12 +432,12 @@ for tab, group_name in zip(tabs, groups_to_render):
 
         st.markdown("---")
         st.markdown("##### 📈 本周日均涨跌排名 (Bot)")
-        st.caption("ℹ️ **对比周期：**本周日均 vs 上周日均 (已进行时间标准化)")
+        st.caption("**对比周期：**本周日均 vs 上周日均 (已进行时间标准化)")
 
         
         # --- 2. 咨询涨跌排名 (Bot) ---
         st.markdown("<div style='border: 1px solid #ddd; padding: 10px; border-radius: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
-        st.markdown("###### 🗣️ 咨询数变化")
+        st.markdown("###### 咨询数变化")
         max_down_c = df_group_compare[df_group_compare['Diff_Avg_Consultations'] < 0].sort_values(by='Pct_Change_Consultations', ascending=True).head(1)
         max_up_c = df_group_compare[df_group_compare['Diff_Avg_Consultations'] > 0].sort_values(by='Pct_Change_Consultations', ascending=False).head(1)
         
@@ -448,7 +448,7 @@ for tab, group_name in zip(tabs, groups_to_render):
                 down_data = max_down_c.iloc[0]
                 delta_text = create_bot_ranking_delta_text(down_data['Pct_Change_Consultations'], down_data['Diff_Avg_Consultations'])
                 st.metric(
-                    label="🔻 日均下降最多 Bot", 
+                    label="日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
                     # 传入 V20.0 的格式化 Delta 文本 (已恢复)
                     delta=delta_text, 
@@ -462,7 +462,7 @@ for tab, group_name in zip(tabs, groups_to_render):
                 up_data = max_up_c.iloc[0]
                 delta_text = create_bot_ranking_delta_text(up_data['Pct_Change_Consultations'], up_data['Diff_Avg_Consultations'])
                 st.metric(
-                    label="⬆️ 日均上升最多 Bot", 
+                    label="日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
                     # 传入 V20.0 的格式化 Delta 文本 (已恢复)
                     delta=delta_text, 
@@ -475,7 +475,7 @@ for tab, group_name in zip(tabs, groups_to_render):
         
         # --- 3. 线索涨跌排名 (Bot) ---
         st.markdown("<div style='border: 1px solid #ddd; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)
-        st.markdown("###### 🔗 线索数变化")
+        st.markdown("###### 线索数变化")
         max_down_l = df_group_compare[df_group_compare['Diff_Avg_Leads'] < 0].sort_values(by='Pct_Change_Leads', ascending=True).head(1)
         max_up_l = df_group_compare[df_group_compare['Diff_Avg_Leads'] > 0].sort_values(by='Pct_Change_Leads', ascending=False).head(1)
         
@@ -486,7 +486,7 @@ for tab, group_name in zip(tabs, groups_to_render):
                 down_data = max_down_l.iloc[0]
                 delta_text = create_bot_ranking_delta_text(down_data['Pct_Change_Leads'], down_data['Diff_Avg_Leads'])
                 st.metric(
-                    label="🔻 日均下降最多 Bot", 
+                    label="日均下降最多 Bot", 
                     value=f"Bot: {down_data['BotNoteName']}", 
                     # 传入 V20.0 的格式化 Delta 文本 (已恢复)
                     delta=delta_text, 
@@ -500,7 +500,7 @@ for tab, group_name in zip(tabs, groups_to_render):
                 up_data = max_up_l.iloc[0]
                 delta_text = create_bot_ranking_delta_text(up_data['Pct_Change_Leads'], up_data['Diff_Avg_Leads'])
                 st.metric(
-                    label="⬆️ 日均上升最多 Bot", 
+                    label="日均上升最多 Bot", 
                     value=f"Bot: {up_data['BotNoteName']}", 
                     # 传入 V20.0 的格式化 Delta 文本 (已恢复)
                     delta=delta_text, 
@@ -590,7 +590,7 @@ current_product_filters = st.session_state.product_filters
 # --- 10. 聚合趋势分析 ---
 
 st.markdown("---")
-st.subheader(f"📊 聚合趋势分析 (时间: {current_product_filters['start_date'].strftime('%m.%d')} - {current_product_filters['end_date'].strftime('%m.%d')})")
+st.subheader(f"趋势分析 (时间: {current_product_filters['start_date'].strftime('%m.%d')} - {current_product_filters['end_date'].strftime('%m.%d')})")
 
 if not current_product_filters['notename']:
     st.warning("请在上方【机器人备注名】中选择至少一个机器人进行趋势分析。")
@@ -640,3 +640,4 @@ with st.expander(f"查看源数据 (筛选区间: {current_product_filters['date
         st.dataframe(df_product_filtered.sort_values('Date', ascending=True), use_container_width=True)
     except:
         st.dataframe(df_product_filtered.sort_values('Date', ascending=True), width='stretch')
+
