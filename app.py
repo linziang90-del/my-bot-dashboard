@@ -7,13 +7,12 @@ import gspread
 import numpy as np 
 
 # --- 配置 ---
-SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YkB1U' 
+SPREADSHEET_KEY = '1WCiVbP4mR7v5MgDvEeNV8YCthkTVv0rBVv1DX5YYkB1U' 
 
 # 缓存时间 30分钟
 @st.cache_data(ttl=1800) 
 def load_data():
     """连接 Google Sheets 并加载数据 (高性能版)"""
-    # ... (数据加载代码保持不变)
     try:
         if "gcp_service_account" not in st.secrets:
             st.error("未配置 Secrets！请在 Streamlit Cloud 后台配置 gcp_service_account。")
@@ -135,6 +134,7 @@ def calc_pct(curr, prev):
         return 0.0 if curr == 0 else 100.0
     return (curr - prev) / prev * 100
 
+# 计算各周期数据
 tm_c, tm_l, tm_days = get_data_in_range(df, CURRENT_MONTH_START, TODAY)
 lm_c, lm_l, lm_days = get_data_in_range(df, last_month_start, last_month_end)
 tw_c, tw_l, _ = get_data_in_range(df, CURRENT_WEEK_START, TODAY)
@@ -142,37 +142,57 @@ lw_c, lw_l, _ = get_data_in_range(df, last_week_start, last_week_end)
 t_c, t_l, _ = get_data_in_range(df, TODAY, TODAY)
 y_c, y_l, _ = get_data_in_range(df, yesterday, yesterday)
 
+# 补充周度天数计算 (用于日均)
+tw_days = (TODAY - CURRENT_WEEK_START).days + 1
+tw_days = max(1, tw_days)
+lw_days = 7
+
+# 月度日均及差值
 lm_avg_c = lm_c / lm_days
 lm_avg_l = lm_l / lm_days
 tm_avg_c = tm_c / tm_days
 tm_avg_l = tm_l / tm_days
 diff_c = tm_avg_c - lm_avg_c
 diff_l = tm_avg_l - lm_avg_l
+
+# 周度日均及差值 (新增)
+tw_avg_c = tw_c / tw_days
+lw_avg_c = lw_c / lw_days
+diff_w_c = tw_avg_c - lw_avg_c
+
+tw_avg_l = tw_l / tw_days
+lw_avg_l = lw_l / lw_days
+diff_w_l = tw_avg_l - lw_avg_l
+
+# 日度环比
 pct_c = calc_pct(t_c, y_c)
 pct_l = calc_pct(t_l, y_l)
+
 y_str = yesterday.strftime('%m-%d')
 t_str = TODAY.strftime('%m-%d')
 
-st.markdown("##### 月度概览")
+# --- 1. 月度概览 ---
+st.markdown("##### 📅 月度概览")
 row1_1, row1_2, row1_3, row1_4 = st.columns(4)
 with row1_1: st.metric("上月总咨询数", f"{lm_c:,}", f"日均 {lm_avg_c:.1f}", delta_color="off")
 with row1_2: st.metric("上月总线索数", f"{lm_l:,}", f"日均 {lm_avg_l:.1f}", delta_color="off")
-# 这里的 delta 是字符串，但 Streamlit 默认会解析并显示红/绿/箭头
-with row1_3: st.metric("本月总咨询数", f"{tm_c:,}", f"日均 {tm_avg_c:.1f} (差值 {diff_c:+.1f})", delta_color="normal")
-with row1_4: st.metric("本月总线索数", f"{tm_l:,}", f"日均 {tm_avg_l:.1f} (差值 {diff_l:+.1f})", delta_color="normal")
+# 格式化字符串以确保颜色正确：f"{val:+.1f} (文本)"
+with row1_3: st.metric("本月总咨询数", f"{tm_c:,}", f"{diff_c:+.1f} (日均差值)", delta_color="normal")
+with row1_4: st.metric("本月总线索数", f"{tm_l:,}", f"{diff_l:+.1f} (日均差值)", delta_color="normal")
 
-st.markdown("##### 周度概览 (周一到周日)")
+# --- 2. 周度概览 (新增日均对比) ---
+st.markdown("##### 🗓️ 周度概览 (周一到周日)")
 row2_1, row2_2, row2_3, row2_4 = st.columns(4)
-with row2_1: st.metric("上周咨询数", f"{lw_c:,}")
-with row2_2: st.metric("上周线索数", f"{lw_l:,}")
-with row2_3: st.metric("本周咨询数", f"{tw_c:,}")
-with row2_4: st.metric("本周线索数", f"{tw_l:,}")
+with row2_1: st.metric("上周咨询数", f"{lw_c:,}", f"日均 {lw_avg_c:.1f}", delta_color="off")
+with row2_2: st.metric("上周线索数", f"{lw_l:,}", f"日均 {lw_avg_l:.1f}", delta_color="off")
+with row2_3: st.metric("本周咨询数", f"{tw_c:,}", f"{diff_w_c:+.1f} (日均差值)", delta_color="normal")
+with row2_4: st.metric("本周线索数", f"{tw_l:,}", f"{diff_w_l:+.1f} (日均差值)", delta_color="normal")
 
-st.markdown("##### 日度概览")
+# --- 3. 日度概览 ---
+st.markdown("##### ⏰ 日度概览")
 row3_1, row3_2, row3_3, row3_4 = st.columns(4)
 with row3_1: st.metric(f"昨日咨询数 ({y_str})", f"{y_c:,}")
 with row3_2: st.metric(f"昨日线索数 ({y_str})", f"{y_l:,}")
-# 这里的 delta 是字符串，包含百分比和 vs 昨日文本，Streamlit 默认会解析并显示红/绿/箭头
 with row3_3: st.metric(f"今日咨询数 ({t_str})", f"{t_c:,}", f"{pct_c:.1f}% vs 昨日", delta_color="normal")
 with row3_4: st.metric(f"今日线索数 ({t_str})", f"{t_l:,}", f"{pct_l:.1f}% vs 昨日", delta_color="normal")
 
@@ -246,7 +266,7 @@ else:
 st.markdown("---")
 
 # ====================================================================
-# 🔥 SECTION 7: 各小组核心数据指标 (日均对比 + 线索排名) -> 采用 TABS 布局
+# 🔥 SECTION 7: 各小组核心数据指标 (日均对比 + 线索排名)
 # ====================================================================
 st.header("🏢 各小组核心数据指标")
 
@@ -256,7 +276,7 @@ REQUIRED_GROUPS = [
     '投放一组', '投放二组', '投放三组'
 ]
 
-# --- 预先计算 Bot 周度对比数据 (用于排名) ---
+# --- 预先计算 Bot 周度对比数据 ---
 df_week = df[df['Date'].dt.date >= last_week_start].copy()
 df_cw = df_week[df_week['Date'].dt.date >= CURRENT_WEEK_START]
 df_lw = df_week[df_week['Date'].dt.date <= last_week_end]
@@ -357,87 +377,60 @@ for tab, group_name in zip(tabs, groups_to_render):
         df_group_standard = df[df['Group'] == group_name]
         df_group_compare = df_compare[df_compare['Group'] == group_name]
 
-        # --- 1. 标准核心指标计算 (新增对比) ---
+        # --- 1. 标准核心指标计算 ---
         metrics = calculate_group_metrics_with_delta(df_group_standard)
         
         col_m_c, col_m_l, col_w_c, col_w_l, col_d_c, col_d_l = st.columns(6)
 
-        # 辅助函数: 创建核心指标 Delta **显示文本**
-        # ⚠️ 确保只返回数值的字符串，用于 Streamlit 正确解析颜色和箭头
+        # 辅助函数: 创建 Delta 文本
         def create_core_metric_delta_text(delta_val, is_avg=True):
             if is_avg:
-                # 核心指标显示格式: "[+/-]X.X" (日均差值)
+                # 核心指标显示格式: "[+/-]X.X (日均差值)"
                 return f"{delta_val:+.1f} (日均差值)"
             else:
-                # 核心指标显示格式: "[+/-]X vs 昨日" (总量差值)
+                # 核心指标显示格式: "[+/-]X vs 昨日"
                 return f"{delta_val:+d} vs 昨日"
         
-        # 辅助函数: 创建 Bot 排名 Delta 文本 (V20.0 格式，保留中文)
+        # 辅助函数: 创建 Bot 排名 Delta 文本 (V20.0 格式)
         def create_bot_ranking_delta_text(pct_change, avg_diff):
-            # V20.0 格式: "[+/-]X.X% ([+/-]Y.Y次/日)"
             return f"{pct_change:+.1f}% ({avg_diff:+.1f}次/日)"
 
 
-        # 月度咨询 (vs 上月日均)
+        # 月度咨询
         with col_m_c: 
-            st.metric(
-                "本月总咨询", 
-                f"{metrics['tm_c']:,}", 
-                # 传入纯数值字符串，确保颜色/箭头逻辑正确
-                delta=create_core_metric_delta_text(metrics['delta_month_c'], is_avg=True),
-                delta_color="normal"
-            )
-        # 月度线索 (vs 上月日均)
+            st.metric("本月总咨询", f"{metrics['tm_c']:,}", 
+                delta=create_core_metric_delta_text(metrics['delta_month_c'], True), delta_color="normal")
+        # 月度线索
         with col_m_l: 
-            st.metric(
-                "本月总线索", 
-                f"{metrics['tm_l']:,}", 
-                delta=create_core_metric_delta_text(metrics['delta_month_l'], is_avg=True),
-                delta_color="normal"
-            )
+            st.metric("本月总线索", f"{metrics['tm_l']:,}", 
+                delta=create_core_metric_delta_text(metrics['delta_month_l'], True), delta_color="normal")
             
-        # 周咨询 (vs 上周日均)
+        # 周咨询
         with col_w_c: 
-            st.metric(
-                "本周咨询", 
-                f"{metrics['tw_c']:,}", 
-                delta=create_core_metric_delta_text(metrics['delta_week_c'], is_avg=True),
-                delta_color="normal"
-            )
-        # 周线索 (vs 上周日均)
+            st.metric("本周咨询", f"{metrics['tw_c']:,}", 
+                delta=create_core_metric_delta_text(metrics['delta_week_c'], True), delta_color="normal")
+        # 周线索
         with col_w_l: 
-            st.metric(
-                "本周线索", 
-                f"{metrics['tw_l']:,}", 
-                delta=create_core_metric_delta_text(metrics['delta_week_l'], is_avg=True),
-                delta_color="normal"
-            )
+            st.metric("本周线索", f"{metrics['tw_l']:,}", 
+                delta=create_core_metric_delta_text(metrics['delta_week_l'], True), delta_color="normal")
             
-        # 今日咨询 (vs 昨日总数)
+        # 今日咨询
         with col_d_c: 
-            st.metric(
-                "今日咨询", 
-                f"{metrics['t_c']:,}", 
-                delta=create_core_metric_delta_text(metrics['delta_day_c'], is_avg=False), 
-                delta_color="normal"
-            )
-        # 今日线索 (vs 昨日总数)
+            st.metric("今日咨询", f"{metrics['t_c']:,}", 
+                delta=create_core_metric_delta_text(metrics['delta_day_c'], False), delta_color="normal")
+        # 今日线索
         with col_d_l: 
-            st.metric(
-                "今日线索", 
-                f"{metrics['t_l']:,}", 
-                delta=create_core_metric_delta_text(metrics['delta_day_l'], is_avg=False),
-                delta_color="normal"
-            )
+            st.metric("今日线索", f"{metrics['t_l']:,}", 
+                delta=create_core_metric_delta_text(metrics['delta_day_l'], False), delta_color="normal")
 
         st.markdown("---")
         st.markdown("##### 📈 本周日均涨跌排名 (Bot)")
-        st.caption("**对比周期：**本周日均 vs 上周日均 (已进行时间标准化)")
+        st.caption("ℹ️ **对比周期：**本周日均 vs 上周日均 (已进行时间标准化)")
 
         
         # --- 2. 咨询涨跌排名 (Bot) ---
         st.markdown("<div style='border: 1px solid #ddd; padding: 10px; border-radius: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
-        st.markdown("###### 咨询数变化")
+        st.markdown("###### 🗣️ 咨询数变化")
         max_down_c = df_group_compare[df_group_compare['Diff_Avg_Consultations'] < 0].sort_values(by='Pct_Change_Consultations', ascending=True).head(1)
         max_up_c = df_group_compare[df_group_compare['Diff_Avg_Consultations'] > 0].sort_values(by='Pct_Change_Consultations', ascending=False).head(1)
         
@@ -447,13 +440,7 @@ for tab, group_name in zip(tabs, groups_to_render):
             if not max_down_c.empty:
                 down_data = max_down_c.iloc[0]
                 delta_text = create_bot_ranking_delta_text(down_data['Pct_Change_Consultations'], down_data['Diff_Avg_Consultations'])
-                st.metric(
-                    label="日均下降最多 Bot", 
-                    value=f"Bot: {down_data['BotNoteName']}", 
-                    # 传入 V20.0 的格式化 Delta 文本 (已恢复)
-                    delta=delta_text, 
-                    delta_color="normal" 
-                )
+                st.metric(label="🔻 日均下降最多 Bot", value=f"Bot: {down_data['BotNoteName']}", delta=delta_text, delta_color="normal")
             else:
                 st.info("日均无咨询下降的 Bot")
         
@@ -461,13 +448,7 @@ for tab, group_name in zip(tabs, groups_to_render):
             if not max_up_c.empty:
                 up_data = max_up_c.iloc[0]
                 delta_text = create_bot_ranking_delta_text(up_data['Pct_Change_Consultations'], up_data['Diff_Avg_Consultations'])
-                st.metric(
-                    label="日均上升最多 Bot", 
-                    value=f"Bot: {up_data['BotNoteName']}", 
-                    # 传入 V20.0 的格式化 Delta 文本 (已恢复)
-                    delta=delta_text, 
-                    delta_color="normal" 
-                )
+                st.metric(label="⬆️ 日均上升最多 Bot", value=f"Bot: {up_data['BotNoteName']}", delta=delta_text, delta_color="normal")
             else:
                 st.info("日均无咨询上升的 Bot")
         st.markdown("</div>", unsafe_allow_html=True) 
@@ -475,7 +456,7 @@ for tab, group_name in zip(tabs, groups_to_render):
         
         # --- 3. 线索涨跌排名 (Bot) ---
         st.markdown("<div style='border: 1px solid #ddd; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)
-        st.markdown("###### 线索数变化")
+        st.markdown("###### 🔗 线索数变化")
         max_down_l = df_group_compare[df_group_compare['Diff_Avg_Leads'] < 0].sort_values(by='Pct_Change_Leads', ascending=True).head(1)
         max_up_l = df_group_compare[df_group_compare['Diff_Avg_Leads'] > 0].sort_values(by='Pct_Change_Leads', ascending=False).head(1)
         
@@ -485,13 +466,7 @@ for tab, group_name in zip(tabs, groups_to_render):
             if not max_down_l.empty:
                 down_data = max_down_l.iloc[0]
                 delta_text = create_bot_ranking_delta_text(down_data['Pct_Change_Leads'], down_data['Diff_Avg_Leads'])
-                st.metric(
-                    label="日均下降最多 Bot", 
-                    value=f"Bot: {down_data['BotNoteName']}", 
-                    # 传入 V20.0 的格式化 Delta 文本 (已恢复)
-                    delta=delta_text, 
-                    delta_color="normal" 
-                )
+                st.metric(label="🔻 日均下降最多 Bot", value=f"Bot: {down_data['BotNoteName']}", delta=delta_text, delta_color="normal")
             else:
                 st.info("日均无线索下降的 Bot")
         
@@ -499,13 +474,7 @@ for tab, group_name in zip(tabs, groups_to_render):
             if not max_up_l.empty:
                 up_data = max_up_l.iloc[0]
                 delta_text = create_bot_ranking_delta_text(up_data['Pct_Change_Leads'], up_data['Diff_Avg_Leads'])
-                st.metric(
-                    label="日均上升最多 Bot", 
-                    value=f"Bot: {up_data['BotNoteName']}", 
-                    # 传入 V20.0 的格式化 Delta 文本 (已恢复)
-                    delta=delta_text, 
-                    delta_color="normal" 
-                )
+                st.metric(label="⬆️ 日均上升最多 Bot", value=f"Bot: {up_data['BotNoteName']}", delta=delta_text, delta_color="normal")
             else:
                 st.info("日均无线索上升的 Bot")
         st.markdown("</div>", unsafe_allow_html=True) 
@@ -590,7 +559,7 @@ current_product_filters = st.session_state.product_filters
 # --- 10. 聚合趋势分析 ---
 
 st.markdown("---")
-st.subheader(f"趋势分析 (时间: {current_product_filters['start_date'].strftime('%m.%d')} - {current_product_filters['end_date'].strftime('%m.%d')})")
+st.subheader(f"📊 聚合趋势分析 (时间: {current_product_filters['start_date'].strftime('%m.%d')} - {current_product_filters['end_date'].strftime('%m.%d')})")
 
 if not current_product_filters['notename']:
     st.warning("请在上方【机器人备注名】中选择至少一个机器人进行趋势分析。")
@@ -640,4 +609,3 @@ with st.expander(f"查看源数据 (筛选区间: {current_product_filters['date
         st.dataframe(df_product_filtered.sort_values('Date', ascending=True), use_container_width=True)
     except:
         st.dataframe(df_product_filtered.sort_values('Date', ascending=True), width='stretch')
-
